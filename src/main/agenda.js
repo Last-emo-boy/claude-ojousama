@@ -12,10 +12,15 @@ const { execFile } = require('child_process')
 const { fmtTime } = require('./persona')
 const { Growth, cleanLine, dayStr } = require('./growth')
 
-/** Run one fixed, read-only git command; '' on any failure. */
+/**
+ * Run one fixed, read-only git command; '' on any failure. A repo's own config must not make it run
+ * programs (core.fsmonitor), and it never takes the index lock while the user works.
+ */
 function git(cwd, args) {
+  const safe = ['-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false', ...args]
+  const env = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' }
   return new Promise((resolve) => {
-    execFile('git', args, { cwd, timeout: 5000, windowsHide: true, maxBuffer: 1 << 20 }, (err, out) => resolve(err ? '' : String(out)))
+    execFile('git', safe, { cwd, env, timeout: 5000, windowsHide: true, maxBuffer: 1 << 20 }, (err, out) => resolve(err ? '' : String(out)))
   })
 }
 

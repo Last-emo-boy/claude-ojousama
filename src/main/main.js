@@ -1942,8 +1942,8 @@ async function inTransit(fn) {
 }
 
 async function climbTo(seat, cx) {
-  if (!seat || state.dragging || !(await waitFree(1000))) return false
-  const gen = state.moveGen
+  const gen = state.moveGen // taken first: a grab while waiting for the stage also cancels the climb
+  if (!seat || state.dragging || !(await waitFree(1000)) || superseded(gen)) return false
   const [w] = petSize()
   const tx = Math.round((cx != null ? cx : rnd(seat.x0, seat.x1)) - w / 2)
   const from = state.perch
@@ -2063,6 +2063,8 @@ async function landOnWindow({ exclude, maxDrop = Infinity } = {}) {
   const seat = below.sort((a, c) => a.top - c.top)[0]
   await motion.fall(standY(seat.top))
   if (superseded(gen)) return null
+  // Another motion may have cancelled the fall: only sit down if she really got there.
+  if (Math.abs(petWin.getPosition()[1] - standY(seat.top)) > 2) return false
   release()
   motion.place(petWin.getPosition()[0], sitY(seat.top))
   startPerch(seat, rnd(60, 180) * 1000)
@@ -2640,8 +2642,8 @@ function wireIpc() {
     const gen = state.moveGen
     await inTransit(async () => {
       // Let go above a window: she lands on its top edge and sits there. Without gravity only
-      // when put down right at the edge.
-      const landed = S().climbWindows ? await landOnWindow(S().gravity ? {} : { maxDrop: 60 }) : false
+      // when put down right at the edge. Not while a scene is still playing: it moves her on.
+      const landed = S().climbWindows && !state.scripted ? await landOnWindow(S().gravity ? {} : { maxDrop: 60 }) : false
       if (landed === null) return // grabbed again meanwhile
       if (landed) {
         if (S().gravity && Math.random() < 0.5) say(P.pick(P.LINES.perch), { ttl: 3000 })
@@ -2953,7 +2955,7 @@ if (!app.requestSingleInstanceLock()) {
     brain = new Brain(controller)
     brain.start()
     screen.on('display-metrics-changed', () => {
-      if (!motion || !petWin) return
+      if (!motion || !petWin || state.dragging || state.transit > 0) return // the drop/landing settles it
       if (state.perch) unperch('fall') // her seat's coordinates are stale now
       else motion.fall()
     })

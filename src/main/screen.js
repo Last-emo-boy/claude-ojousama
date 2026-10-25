@@ -27,7 +27,6 @@ class ScreenSense {
   constructor({ ownPid } = {}) {
     this.ownPid = ownPid || process.pid
     this.proc = null
-    this.buf = ''
     this.seq = 0
     this.pending = new Map()
     this.cleanupLeftovers()
@@ -38,7 +37,7 @@ class ScreenSense {
   _ensure() {
     if (this.proc && this.proc.exitCode == null && !this.proc.killed) return true
     if (Date.now() < (this.retryAt || 0)) return false // PowerShell could not start recently
-    this.buf = ''
+    let buf = '' // per process: a killed helper's late output never mixes into the new one's
     let p
     try {
       p = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', HELPER], { windowsHide: true })
@@ -55,11 +54,12 @@ class ScreenSense {
     })
     p.stdout.setEncoding('utf8')
     p.stdout.on('data', (chunk) => {
-      this.buf += chunk
+      if (this.proc !== p) return // replaced: its requests were settled already
+      buf += chunk
       let i
-      while ((i = this.buf.indexOf('\n')) >= 0) {
-        const line = this.buf.slice(0, i).trim()
-        this.buf = this.buf.slice(i + 1)
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim()
+        buf = buf.slice(i + 1)
         if (!line) continue
         let r
         try {

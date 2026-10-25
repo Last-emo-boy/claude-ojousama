@@ -98,6 +98,7 @@ const TOOL_PLUGINS = [
   'tool-present', 'tool-pwsh', 'tool-pwsh-persistent', 'tool-ralph', 'tool-schedule', 'tool-session-query', 'tool-skill',
   'tool-str-replace-editor', 'tool-subagent', 'tool-subagent-control', 'tool-terminal', 'tool-todo', 'tool-web', 'tool-workflow',
   'tool-working-directory', 'tool-workspace-dependencies', 'experimental-tool-agent-team', 'subagent-fork-in-process', 'plan-mode',
+  'mcp-client', // tools of any MCP servers configured in DSH
 ]
 const TOOLSETS = {
   full: [], // chat, tasks the user asked for or accepted, goals
