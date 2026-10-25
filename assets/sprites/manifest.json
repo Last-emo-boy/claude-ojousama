@@ -1,0 +1,389 @@
+{
+  "scaleNote": "native pixels; renderer multiplies by settings.scale",
+  "anims": {
+    "idle": {
+      "file": "idle.png",
+      "frames": 4,
+      "w": 107,
+      "h": 100,
+      "fps": 3,
+      "loop": true
+    },
+    "typing": {
+      "file": "typing.png",
+      "frames": 4,
+      "w": 106,
+      "h": 100,
+      "fps": 8,
+      "loop": true
+    },
+    "thinking": {
+      "file": "thinking.png",
+      "frames": 4,
+      "w": 101,
+      "h": 95,
+      "fps": 3,
+      "loop": true
+    },
+    "sleep": {
+      "file": "sleep.png",
+      "frames": 4,
+      "w": 99,
+      "h": 94,
+      "fps": 2,
+      "loop": true
+    },
+    "error": {
+      "file": "error.png",
+      "frames": 4,
+      "w": 107,
+      "h": 95,
+      "fps": 6,
+      "loop": true
+    },
+    "happy": {
+      "file": "happy.png",
+      "frames": 4,
+      "w": 97,
+      "h": 120,
+      "fps": 7,
+      "loop": true
+    },
+    "wave": {
+      "file": "wave.png",
+      "frames": 4,
+      "w": 98,
+      "h": 122,
+      "fps": 5,
+      "loop": true
+    },
+    "walk": {
+      "file": "walk.png",
+      "frames": 4,
+      "w": 107,
+      "h": 119,
+      "fps": 7,
+      "loop": true
+    },
+    "drag": {
+      "file": "drag.png",
+      "frames": 4,
+      "w": 107,
+      "h": 111,
+      "fps": 5,
+      "loop": true,
+      "rope": [
+        75,
+        74,
+        75,
+        75
+      ]
+    },
+    "dangle": {
+      "file": "dangle.png",
+      "frames": 4,
+      "w": 107,
+      "h": 124,
+      "fps": 7,
+      "loop": true
+    },
+    "peek": {
+      "file": "peek.png",
+      "frames": 4,
+      "w": 43,
+      "h": 68,
+      "fps": 3,
+      "loop": false,
+      "anchor": "right"
+    },
+    "surprise": {
+      "file": "surprise.png",
+      "frames": 4,
+      "w": 100,
+      "h": 126,
+      "fps": 5,
+      "loop": false
+    },
+    "look": {
+      "file": "look.png",
+      "frames": 4,
+      "w": 107,
+      "h": 98,
+      "fps": 4,
+      "loop": true
+    },
+    "magnify": {
+      "file": "magnify.png",
+      "frames": 4,
+      "w": 107,
+      "h": 124,
+      "fps": 4,
+      "loop": true
+    },
+    "stretch": {
+      "file": "stretch.png",
+      "frames": 4,
+      "w": 89,
+      "h": 128,
+      "fps": 3,
+      "loop": true
+    },
+    "water": {
+      "file": "water.png",
+      "frames": 4,
+      "w": 107,
+      "h": 125,
+      "fps": 4,
+      "loop": true
+    },
+    "read": {
+      "file": "read.png",
+      "frames": 4,
+      "w": 104,
+      "h": 101,
+      "fps": 2,
+      "loop": true
+    },
+    "eat": {
+      "file": "eat.png",
+      "frames": 4,
+      "w": 93,
+      "h": 122,
+      "fps": 5,
+      "loop": true
+    },
+    "giggle": {
+      "file": "giggle.png",
+      "frames": 4,
+      "w": 95,
+      "h": 125,
+      "fps": 6,
+      "loop": true
+    },
+    "point": {
+      "file": "point.png",
+      "frames": 4,
+      "w": 107,
+      "h": 124,
+      "fps": 4,
+      "loop": true
+    },
+    "sit": {
+      "file": "sit.png",
+      "frames": 4,
+      "w": 93,
+      "h": 127,
+      "fps": 3,
+      "loop": true,
+      "sink": 36
+    },
+    "yawn": {
+      "file": "yawn.png",
+      "frames": 4,
+      "w": 105,
+      "h": 102,
+      "fps": 3,
+      "loop": true
+    },
+    "sulk": {
+      "file": "sulk.png",
+      "frames": 4,
+      "w": 95,
+      "h": 124,
+      "fps": 4,
+      "loop": true
+    },
+    "cheer": {
+      "file": "cheer.png",
+      "frames": 4,
+      "w": 98,
+      "h": 124,
+      "fps": 6,
+      "loop": true
+    },
+    "shush": {
+      "file": "shush.png",
+      "frames": 4,
+      "w": 98,
+      "h": 126,
+      "fps": 3,
+      "loop": true
+    },
+    "music": {
+      "file": "music.png",
+      "frames": 4,
+      "w": 99,
+      "h": 123,
+      "fps": 5,
+      "loop": true
+    },
+    "cry": {
+      "file": "cry.png",
+      "frames": 4,
+      "w": 92,
+      "h": 123,
+      "fps": 5,
+      "loop": true
+    },
+    "nap": {
+      "file": "nap.png",
+      "frames": 4,
+      "w": 100,
+      "h": 92,
+      "fps": 2,
+      "loop": true
+    },
+    "phone": {
+      "file": "phone.png",
+      "frames": 4,
+      "w": 107,
+      "h": 129,
+      "fps": 3,
+      "loop": true
+    },
+    "clean": {
+      "file": "clean.png",
+      "frames": 4,
+      "w": 107,
+      "h": 112,
+      "fps": 6,
+      "loop": true
+    },
+    "umbrella": {
+      "file": "umbrella.png",
+      "frames": 4,
+      "w": 98,
+      "h": 132,
+      "fps": 4,
+      "loop": true
+    },
+    "write": {
+      "file": "write.png",
+      "frames": 4,
+      "w": 104,
+      "h": 106,
+      "fps": 5,
+      "loop": true
+    },
+    "relax": {
+      "file": "relax.png",
+      "frames": 4,
+      "w": 105,
+      "h": 112,
+      "fps": 3,
+      "loop": true
+    },
+    "confused": {
+      "file": "confused.png",
+      "frames": 4,
+      "w": 107,
+      "h": 126,
+      "fps": 3,
+      "loop": true
+    },
+    "shy": {
+      "file": "shy.png",
+      "frames": 4,
+      "w": 93,
+      "h": 131,
+      "fps": 4,
+      "loop": true
+    },
+    "dizzy": {
+      "file": "dizzy.png",
+      "frames": 4,
+      "w": 101,
+      "h": 131,
+      "fps": 5,
+      "loop": true
+    },
+    "angry": {
+      "file": "angry.png",
+      "frames": 4,
+      "w": 98,
+      "h": 120,
+      "fps": 6,
+      "loop": true
+    },
+    "laugh": {
+      "file": "laugh.png",
+      "frames": 4,
+      "w": 107,
+      "h": 127,
+      "fps": 6,
+      "loop": true
+    },
+    "thumbsup": {
+      "file": "thumbsup.png",
+      "frames": 4,
+      "w": 96,
+      "h": 129,
+      "fps": 4,
+      "loop": true
+    },
+    "sign": {
+      "file": "sign.png",
+      "frames": 4,
+      "w": 102,
+      "h": 129,
+      "fps": 2,
+      "loop": true
+    },
+    "gift": {
+      "file": "gift.png",
+      "frames": 4,
+      "w": 103,
+      "h": 131,
+      "fps": 3,
+      "loop": true
+    },
+    "squish": {
+      "file": "squish.png",
+      "frames": 4,
+      "w": 105,
+      "h": 90,
+      "fps": 3,
+      "loop": true
+    },
+    "run": {
+      "file": "run.png",
+      "frames": 4,
+      "w": 99,
+      "h": 113,
+      "fps": 9,
+      "loop": true
+    },
+    "tumble": {
+      "file": "tumble.png",
+      "frames": 4,
+      "w": 107,
+      "h": 104,
+      "fps": 3,
+      "loop": false
+    },
+    "dance": {
+      "file": "dance.png",
+      "frames": 4,
+      "w": 98,
+      "h": 124,
+      "fps": 5,
+      "loop": true
+    },
+    "pet": {
+      "file": "pet.png",
+      "frames": 4,
+      "w": 107,
+      "h": 106,
+      "fps": 3,
+      "loop": true
+    },
+    "magic": {
+      "file": "magic.png",
+      "frames": 4,
+      "w": 107,
+      "h": 128,
+      "fps": 6,
+      "loop": true
+    }
+  }
+}

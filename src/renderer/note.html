@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; img-src 'self' file: data:; style-src 'self' file: 'unsafe-inline'; script-src 'self' file:" />
+    <title>Claude Ojousama 的便签</title>
+    <link rel="stylesheet" href="note.css" />
+  </head>
+  <body>
+    <div id="paper" class="hidden">
+      <div class="tape"></div>
+      <div id="todo-view" class="hidden">
+        <header id="head">
+          <span class="title">📌 今日待办</span>
+          <span id="date" class="date"></span>
+          <button id="pin" title="置顶 / 取消置顶">📍</button>
+          <button id="close" title="收起便签">✕</button>
+        </header>
+        <ul id="items"></ul>
+        <form id="add"><input id="add-text" placeholder="+ 记一条，回车添加" maxlength="120" /></form>
+        <div class="sign">— Claude Ojousama ✎</div>
+      </div>
+      <div id="memo-view" class="hidden">
+        <div id="memo-text"></div>
+        <div class="sign">— Claude Ojousama</div>
+      </div>
+    </div>
+    <script src="note.js"></script>
+  </body>
+</html>

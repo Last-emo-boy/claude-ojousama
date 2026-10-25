@@ -1,0 +1,15 @@
+# dependencies / runtime
+node_modules/
+
+# raw image-model output (~1.5 MB each); the processed sprites in assets/sprites are what the app uses
+assets/raw/
+# the character reference used for sprite generation is not redistributed
+assets/reference/
+
+# local development state, scratch scripts and screenshots
+.dev/
+tools/_*
+tools/__pycache__/
+_*.png
+_*.jpg
+*.log

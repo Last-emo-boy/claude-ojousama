@@ -1,0 +1,33 @@
+{
+  "name": "claude-ojousama",
+  "version": "2.0.0",
+  "description": "Claude Ojousama — a pixel-art desktop companion that sees your screen and helps on her own, powered by DeepSeek Harness",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "install-app": "powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -Launch",
+    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/dev-run.ps1",
+    "test": "node tests/senses.test.js && node tests/tidy.test.js && node tests/persona.test.js",
+    "check": "node -e \"for (const d of ['src/main','src/renderer']) for (const f of require('fs').readdirSync(d)) if (f.endsWith('.js')) require('child_process').execFileSync(process.execPath, ['--check', d + '/' + f], { stdio: 'inherit' })\"",
+    "sprites": "python tools/process_sprites.py"
+  },
+  "keywords": [
+    "desktop-pet",
+    "electron",
+    "pixel-art",
+    "ai-agent",
+    "deepseek-harness",
+    "windows"
+  ],
+  "author": "Silasvanceneo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Silasvanceneo/claude-ojousama.git"
+  },
+  "homepage": "https://github.com/Silasvanceneo/claude-ojousama#readme",
+  "type": "commonjs",
+  "devDependencies": {
+    "electron": "^44.7.0"
+  }
+}

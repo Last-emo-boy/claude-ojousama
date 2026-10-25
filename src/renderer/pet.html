@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; img-src 'self' file: data:; style-src 'self' file: 'unsafe-inline'; script-src 'self' file:" />
+    <title>Claude Ojousama</title>
+    <link rel="stylesheet" href="pet.css" />
+  </head>
+  <body>
+    <div id="root">
+      <div id="top">
+        <div id="bubble" class="hidden">
+          <div id="bubble-text"></div>
+          <div id="bubble-buttons"></div>
+        </div>
+        <div id="input" class="hidden">
+          <textarea id="input-text" rows="1" placeholder="和 Claude Ojousama 说点什么…（Enter 发送 · Esc 关闭）"></textarea>
+          <button id="input-send" title="发送">➤</button>
+        </div>
+        <div id="pills">
+          <span id="chip" class="pill hidden"></span>
+          <span id="timer" class="pill hidden"></span>
+        </div>
+      </div>
+      <canvas id="stage"></canvas>
+    </div>
+    <script src="pet.js"></script>
+  </body>
+</html>
