@@ -7,7 +7,7 @@
     "start": "electron .",
     "install-app": "powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -Launch",
     "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/dev-run.ps1",
-    "test": "node tests/senses.test.js && node tests/tidy.test.js && node tests/persona.test.js",
+    "test": "node tests/senses.test.js && node tests/tidy.test.js && node tests/persona.test.js && node tests/growth.test.js && node tests/weather.test.js && node tests/agenda.test.js",
     "check": "node -e \"for (const d of ['src/main','src/renderer']) for (const f of require('fs').readdirSync(d)) if (f.endsWith('.js')) require('child_process').execFileSync(process.execPath, ['--check', d + '/' + f], { stdio: 'inherit' })\"",
     "sprites": "python tools/process_sprites.py"
   },

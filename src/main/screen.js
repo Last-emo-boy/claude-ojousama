@@ -77,6 +77,7 @@ class ScreenSense {
     })
     p.stderr.on('data', (d) => console.warn('[screen-helper]', String(d).trim().slice(0, 300)))
     p.on('exit', () => {
+      if (this.proc !== p && this.proc) return // an old, replaced helper: its requests were settled already
       for (const [, job] of this.pending) {
         clearTimeout(job.timer)
         job.resolve({ ok: false, error: 'helper exited' })
@@ -89,14 +90,31 @@ class ScreenSense {
     return true
   }
 
-  request(cmd, args = {}, timeout = 10000) {
+  /** Requests are answered one at a time; true while any is waiting. */
+  get busy() {
+    return this.pending.size > 0
+  }
+
+  /**
+   * soft: a timeout never restarts the helper (light polls such as rect/wins). Otherwise the helper
+   * is restarted only when the timed-out request was the one it was working on, not when it was
+   * merely queued behind a slow one (OCR).
+   */
+  request(cmd, args = {}, timeout = 10000, { soft = false } = {}) {
     if (!this._ensure()) return Promise.resolve({ ok: false, error: 'helper unavailable' })
     const id = ++this.seq
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
+        const stuck = !soft && this.pending.keys().next().value === id // oldest pending = in progress
         this.pending.delete(id)
         resolve({ ok: false, error: 'timeout' })
+        if (!stuck) return // a late answer is ignored by the reader
         // A hung WinRT call would block every later request: restart the helper.
+        for (const [, job] of this.pending) {
+          clearTimeout(job.timer)
+          job.resolve({ ok: false, error: 'helper restarted' })
+        }
+        this.pending.clear()
         try {
           if (this.proc) this.proc.kill()
         } catch {}
@@ -152,6 +170,40 @@ class ScreenSense {
       fullscreen: fullscreen && !SHELL_CLASSES.has(r.cls),
       key: `${r.process}|${r.title}`,
     }
+  }
+
+  _dip(x, y, w, h) {
+    const phys = { x, y, width: Math.max(1, w), height: Math.max(1, h) }
+    try {
+      return screen.screenToDipRect(null, phys)
+    } catch {
+      return phys
+    }
+  }
+
+  /** Visible top-level windows, topmost first: { hwnd, title, process, cls, bounds (DIP), maximized, own, shell }. */
+  async windows() {
+    const r = await this.request('wins', {}, 5000, { soft: true })
+    if (!r.ok) return []
+    return (r.windows || []).map((w) => ({
+      hwnd: w.hwnd,
+      title: w.title || '',
+      process: w.process || '',
+      cls: w.cls || '',
+      pid: w.pid,
+      bounds: this._dip(w.x, w.y, w.w, w.h),
+      maximized: !!w.maximized,
+      own: w.pid === this.ownPid || /^(ClaudeOjousama|ClaudePet)$/i.test(w.process || ''),
+      shell: SHELL_CLASSES.has(w.cls),
+    }))
+  }
+
+  /** One window's current state: { gone } or { bounds (DIP), minimized, maximized }. */
+  async rect(hwnd) {
+    const r = await this.request('rect', { hwnd }, 3000, { soft: true })
+    if (!r.ok) return null
+    if (r.gone) return { gone: true }
+    return { gone: false, bounds: this._dip(r.x, r.y, r.w, r.h), minimized: !!r.minimized, maximized: !!r.maximized }
   }
 
   /** Main window titles of the given processes (music players etc.). */

@@ -32,6 +32,10 @@ header {
   display: flex;
   flex-direction: column;
   line-height: 1.2;
+  white-space: nowrap;
+}
+.title b {
+  font-size: 13px;
 }
 #status {
   font-size: 11px;
@@ -43,14 +47,16 @@ header {
 nav {
   margin-left: auto;
   display: flex;
-  gap: 2px;
+  gap: 1px;
 }
 nav button {
-  padding: 4px 6px;
+  padding: 4px 4px;
   border: 2px solid transparent;
   background: transparent;
   border-radius: 4px;
   font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
   color: #3b2a20;
 }
@@ -336,4 +342,62 @@ textarea[data-list] {
 button[disabled] {
   opacity: 0.5;
   cursor: default;
+}
+
+/* growth tab */
+.lvl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 8px;
+}
+.lvl b {
+  font-size: 18px;
+  color: #d9622b;
+}
+.lvl .bar {
+  flex: 1;
+  height: 10px;
+  border: 2px solid #3b2a20;
+  border-radius: 3px;
+  background: #fffdf9;
+  overflow: hidden;
+}
+#lvl-bar {
+  height: 100%;
+  width: 0;
+  background: repeating-linear-gradient(90deg, #ff9a3c 0 6px, #ffb36b 6px 8px);
+}
+.chips {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.chips li {
+  font-size: 12px;
+  padding: 1px 8px;
+  border: 1px solid #d9c3a8;
+  border-radius: 10px;
+  color: #a08672;
+}
+.chips li.open {
+  color: #3b2a20;
+  background: #ffe2c2;
+  border-color: #3b2a20;
+}
+.list li .trend {
+  font-size: 11px;
+  white-space: nowrap;
+  color: #d9622b;
+}
+.diary li {
+  flex-direction: column;
+  align-items: stretch;
+}
+.diary li b {
+  font-size: 11px;
+  color: #8a6a55;
 }

@@ -116,6 +116,11 @@ class Proactive {
       this.sleeping = true
       pet.setSleeping(true)
     }
+    // Gone for a long time (or it is night): she curls up on her cushion for a proper nap.
+    if (this.sleeping && this.sleeping !== 'nap' && (idle >= 20 * 60 || inQuietHours(s))) {
+      this.sleeping = 'nap'
+      pet.setSleeping('nap')
+    }
     if (!away && this.away) {
       this.away = false
       const gone = now - this.awaySince
@@ -149,9 +154,11 @@ class Proactive {
     const today = dayKey()
     if (petState.lastGreetDay !== today && new Date().getHours() >= 5 && !quiet) {
       pet.store.patch('pet', { lastGreetDay: today })
+      pet.gainXp(5, '新的一天')
       const open = pet.store.get('todos').filter((t) => !t.done)
       pet.once('wave', 2)
-      const list = open.length ? `\n还没做完的：${open.slice(0, 3).map((t) => `「${t.text}」`).join('、')}` : ''
+      const weather = pet.weatherLine()
+      const list = (open.length ? `\n还没做完的：${open.slice(0, 3).map((t) => `「${t.text}」`).join('、')}` : '') + (weather ? `\n今天：${weather}` : '')
       const buttons = [{ id: 'plan', label: '帮我规划今天' }]
       if (open.length) buttons.push({ id: 'note', label: '贴成便签' })
       buttons.push({ id: 'later', label: '等会儿' })
@@ -234,7 +241,7 @@ class Proactive {
 
     if (s.wander && now >= this.nextWander) {
       this.nextWander = now + rand(4, 10) * MIN
-      pet.wander()
+      if (!pet.isPerched()) pet.wander() // sitting on a window: stay put
     }
   }
 
@@ -311,7 +318,7 @@ class Proactive {
     const icon = ALERT_ICON[a.kind] || '🔔'
     const urgent = a.kind !== 'goal-ask' // a pending decision is never worth a shaking screen
     let text = a.kind === 'goal-ask' ? a.text : `${icon} ${a.text}`
-    // Escalate like a friend who was ignored: knock on the screen, then knock harder.
+    // Escalate when ignored: knock on the screen, then knock harder.
     if (urgent && count === 2) {
       text = pick(LINES.nag2) + '\n' + text
       await pet.motion.shake(450, 5)
@@ -398,11 +405,13 @@ class Proactive {
     const now = Date.now()
     const pending = pet.store.get('alerts').filter((a) => a.nextAt <= now + MIN)
     const reports = pet.unreadGoals()
-    const total = pending.length + reports.length
+    const inbox = pet.inboxCount() // things she prepared in the background while you were away
+    const total = pending.length + reports.length + (inbox ? 1 : 0)
     if (!total || (total === 1 && gone < 10 * MIN)) return false // a single item is shown normally
     const lines = [
       ...pending.map((a) => `${ALERT_ICON[a.kind] || '🔔'} ${clip(String(a.text).split('\n').pop().replace(/^❓\s*/, ''), 26)}`),
       ...reports.map((g) => `🎯「${clip(g.title, 14)}」有新进展`),
+      ...(inbox ? [`💡 我在你不在时准备了 ${inbox} 件事，等下慢慢说`] : []),
     ]
     this.showing = 'catchup'
     pet.once('wave', 2)

@@ -58,6 +58,8 @@ const INVOKE = [
   'look:now',
   'screen:pause',
   'climb:now',
+  'growth:reflect',
+  'weather:refresh',
 ]
 const ON = ['pet:cmd', 'state', 'panel:tab', 'note:state']
 

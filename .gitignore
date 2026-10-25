@@ -12,4 +12,6 @@ tools/_*
 tools/__pycache__/
 _*.png
 _*.jpg
+# any scratch file in the project root starting with "_"
+/_*
 *.log

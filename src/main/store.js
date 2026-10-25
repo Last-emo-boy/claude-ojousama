@@ -30,7 +30,7 @@ const DEFAULTS = {
     nagMinutes: 5, // come back about an ignored alert after N minutes (0 = never)
     watchFolders: null, // null -> the Downloads folder
     // Rules for things she does on her own: auto | ask | off
-    rules: { fileMove: 'ask', tidy: 'ask', open: 'auto', goals: 'auto', note: 'auto', screen: 'auto', research: 'auto' },
+    rules: { fileMove: 'ask', tidy: 'ask', open: 'auto', goals: 'auto', note: 'auto', screen: 'auto', research: 'auto', agenda: 'auto' },
     // Autonomy: quiet | normal | active
     autonomy: 'active',
     screenBlock: null, // null -> senses.DEFAULT_BLOCK
@@ -44,8 +44,15 @@ const DEFAULTS = {
     summaryTime: '18:30', // '' disables the daily summary
     glanceModel: '', // 'provider::model' for screen looks and autonomy decisions; '' = same as chat
     glanceEffort: '',
+    weatherCity: '', // '' = no weather (nothing is fetched)
+    agendaPerDay: 6, // background jobs she may start on her own per day (0 = none)
+    morningBrief: true,
+    workspacePulse: true, // read-only look at recently changed projects in the work folder while away
   },
-  pet: { x: null, y: null, affection: 0, mood: 0, lastGreetDay: '', lastNightNag: '', lastNoteDay: '', lastSummaryDay: '', screenPauseUntil: 0 },
+  pet: { x: null, y: null, affection: 0, mood: 0, lastGreetDay: '', lastNightNag: '', lastNoteDay: '', lastSummaryDay: '', screenPauseUntil: 0, lastRainDay: '', lastGiftAt: 0 },
+  growth: { xp: 0, level: 1, notes: [], diary: [], insights: [], learned: [], lastReflectAt: 0, reflectCursor: 0, reflectDay: '', reflectsToday: 0, lastBriefDay: '', lastPulseDay: '', lastTipDay: '', agendaDay: '', agendaRuns: 0 },
+  stats: {}, // help kind -> { offered, accepted, declined, ignored }
+  inbox: [], // suggestions waiting to be shown once
   chat: { sessionId: null, messages: [] },
   note: { pinned: true },
   watch: { seen: {}, pending: {} },

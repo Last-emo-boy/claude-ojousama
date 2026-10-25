@@ -95,10 +95,10 @@ class Motion {
     return this.walkTo(x + dx, speed)
   }
 
-  /** Fall with gravity until the window rests on the taskbar. */
-  fall() {
+  /** Fall with gravity until the window rests on the taskbar (or on `floorY`, e.g. a window's top edge). */
+  fall(floorY) {
     const win = this.getWin()
-    const floor = this.floorY()
+    const floor = floorY != null ? Math.round(floorY) : this.floorY()
     let [x, y] = win.getPosition()
     if (y >= floor - 2) {
       this.setPos(win, x, floor)

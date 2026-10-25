@@ -166,6 +166,53 @@ def seat_sink(frames):
     return 0
 
 
+def board_rects(frames):
+    """For the sign strip: the blank board (largest flat-coloured area in the middle), per frame."""
+    from collections import Counter, deque
+
+    rects = []
+    for f in frames:
+        h, w = f.shape[:2]
+        band = f[int(h * 0.4) : int(h * 0.8), int(w * 0.25) : int(w * 0.75)]
+        cols = Counter(tuple(p[:3]) for row in band for p in row if p[3] > 0)
+        color = np.array(cols.most_common(1)[0][0], dtype=int)
+        mask = (f[..., 3] > 0) & (np.abs(f[..., :3].astype(int) - color).sum(axis=2) <= 24)
+        seen = np.zeros_like(mask)
+        best = []
+        for y0, x0 in zip(*np.nonzero(mask)):
+            if seen[y0, x0]:
+                continue
+            q = deque([(y0, x0)])
+            seen[y0, x0] = True
+            pts = []
+            while q:
+                y, x = q.popleft()
+                pts.append((y, x))
+                for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    ny, nx = y + dy, x + dx
+                    if 0 <= ny < h and 0 <= nx < w and mask[ny, nx] and not seen[ny, nx]:
+                        seen[ny, nx] = True
+                        q.append((ny, nx))
+            if len(pts) > len(best):
+                best = pts
+        ys = [p[0] for p in best]
+        xs = [p[1] for p in best]
+        rects.append({"x": int(min(xs)), "y": int(min(ys)), "w": int(max(xs) - min(xs) + 1), "h": int(max(ys) - min(ys) + 1)})
+    return rects
+
+
+def add_boards():
+    """Write the sign's board rects into the manifest without re-processing the strip."""
+    with open(os.path.join(OUT, "manifest.json"), encoding="utf8") as fh_:
+        manifest = json.load(fh_)
+    a = manifest["anims"]["sign"]
+    strip = np.array(Image.open(os.path.join(OUT, a["file"])).convert("RGBA"))
+    a["boards"] = board_rects([strip[:, i * a["w"] : (i + 1) * a["w"]] for i in range(a["frames"])])
+    with open(os.path.join(OUT, "manifest.json"), "w", encoding="utf8") as fh_:
+        json.dump(manifest, fh_, indent=2)
+    print("sign boards", a["boards"])
+
+
 def add(names):
     """Process only `names` and merge them into the existing manifest; existing strips stay untouched."""
     with open(os.path.join(OUT, "manifest.json"), encoding="utf8") as fh_:
@@ -195,6 +242,8 @@ def add(names):
         entry = {"file": name + ".png", "frames": len(frames), "w": fw, "h": fh, "fps": fps, "loop": loop}
         if name == "sit":
             entry["sink"] = seat_sink([strip[:, i * fw : (i + 1) * fw] for i in range(len(frames))])
+        if name == "sign":
+            entry["boards"] = board_rects([strip[:, i * fw : (i + 1) * fw] for i in range(len(frames))])
         manifest["anims"][name] = entry
         print(f"{name}: {len(frames)} x {fw}x{fh}" + (f" sink={entry['sink']}" if name == "sit" else ""))
     with open(os.path.join(OUT, "manifest.json"), "w", encoding="utf8") as fh_:
@@ -204,6 +253,8 @@ def add(names):
 def main():
     if len(sys.argv) > 2 and sys.argv[1] == "--add":
         return add(sys.argv[2:])
+    if len(sys.argv) > 1 and sys.argv[1] == "--boards":
+        return add_boards()
     os.makedirs(OUT, exist_ok=True)
     names = [n for n in ANIMS if os.path.exists(os.path.join(RAW, n + ".png"))]
     typing_cells = load_cells("typing")

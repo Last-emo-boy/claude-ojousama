@@ -3,15 +3,28 @@
 #   {"id":1,"cmd":"fg"}                         -> foreground window: title, class, process, physical bounds
 #   {"id":2,"cmd":"ocr","path":"x.png","lang":"zh-Hans-CN"} -> recognised text lines
 #   {"id":3,"cmd":"procs","names":["cloudmusic"]} -> main window titles of those processes
+#   {"id":4,"cmd":"wins"}                       -> visible top-level windows, topmost first (z-order)
+#   {"id":5,"cmd":"rect","hwnd":123}            -> one window's current bounds / state
 $ErrorActionPreference = 'Stop'
 [Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
 
 Add-Type -TypeDefinition @'
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+public class PetWinInfo {
+  public long Hwnd; public string Title; public string Cls; public uint Pid;
+  public int X, Y, W, H; public bool Max;
+}
 public static class PetWin {
+  public delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr l);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
+  [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] public static extern int GetWindowLong(IntPtr h, int idx);
+  [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] public static extern int DwmGetInt(IntPtr h, int attr, out int v, int size);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
@@ -22,6 +35,33 @@ public static class PetWin {
   [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
   [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr h);
   [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int attr, out RECT r, int size);
+
+  public static RECT Bounds(IntPtr h) {
+    RECT r;
+    // DWMWA_EXTENDED_FRAME_BOUNDS = 9: the visible frame without the invisible resize border.
+    if (DwmGetWindowAttribute(h, 9, out r, 16) != 0) GetWindowRect(h, out r);
+    return r;
+  }
+
+  /** Visible, uncloaked, non-tool, non-minimized top-level windows in z-order (topmost first). */
+  public static List<PetWinInfo> Visible(int limit) {
+    var list = new List<PetWinInfo>();
+    EnumWindows(delegate (IntPtr h, IntPtr l) {
+      if (!IsWindowVisible(h) || IsIconic(h)) return true;
+      if ((GetWindowLong(h, -20) & 0x80) != 0) return true; // WS_EX_TOOLWINDOW
+      int cloaked;
+      if (DwmGetInt(h, 14, out cloaked, 4) == 0 && cloaked != 0) return true; // DWMWA_CLOAKED
+      RECT r = Bounds(h);
+      if (r.Right - r.Left < 60 || r.Bottom - r.Top < 40) return true;
+      var t = new StringBuilder(256); GetWindowText(h, t, 256);
+      var c = new StringBuilder(128); GetClassName(h, c, 128);
+      uint pid; GetWindowThreadProcessId(h, out pid);
+      list.Add(new PetWinInfo { Hwnd = h.ToInt64(), Title = t.ToString(), Cls = c.ToString(), Pid = pid,
+        X = r.Left, Y = r.Top, W = r.Right - r.Left, H = r.Bottom - r.Top, Max = IsZoomed(h) });
+      return list.Count < limit;
+    }, IntPtr.Zero);
+    return list;
+  }
 }
 '@
 # Physical pixels everywhere; the pet converts them to DIPs.
@@ -103,6 +143,23 @@ while ($true) {
         $wins = @(Get-Process -Name @($req.names) -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle } |
           ForEach-Object { @{ process = $_.ProcessName; title = $_.MainWindowTitle } })
         $res = @{ ok = $true; windows = $wins }
+      }
+      'wins' {
+        $ws = [PetWin]::Visible(48)
+        $names = @{}
+        $ids = @($ws | ForEach-Object { [int]$_.Pid } | Select-Object -Unique)
+        foreach ($p in (Get-Process -Id $ids -ErrorAction SilentlyContinue)) { $names["$($p.Id)"] = $p.ProcessName }
+        $res = @{ ok = $true; windows = @($ws | ForEach-Object {
+          @{ hwnd = $_.Hwnd; title = $_.Title; cls = $_.Cls; pid = $_.Pid; process = $names["$($_.Pid)"]; x = $_.X; y = $_.Y; w = $_.W; h = $_.H; maximized = $_.Max }
+        }) }
+      }
+      'rect' {
+        $h = [IntPtr][long]$req.hwnd
+        if (-not [PetWin]::IsWindow($h) -or -not [PetWin]::IsWindowVisible($h)) { $res = @{ ok = $true; gone = $true } }
+        else {
+          $r = [PetWin]::Bounds($h)
+          $res = @{ ok = $true; x = $r.Left; y = $r.Top; w = $r.Right - $r.Left; h = $r.Bottom - $r.Top; minimized = [PetWin]::IsIconic($h); maximized = [PetWin]::IsZoomed($h) }
+        }
       }
       'ping' { $res = @{ ok = $true } }
       default { $res = @{ ok = $false; error = "unknown cmd $($req.cmd)" } }

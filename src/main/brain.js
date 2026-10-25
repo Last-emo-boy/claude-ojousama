@@ -91,7 +91,9 @@ class Brain {
     this.fg = info
     this.handleFullscreen(info)
     await this.handleMeeting(info, now)
-    pet.checkPerch(info)
+    // Background work she starts herself (memories, brief, workspace pulse, tips) and the weather.
+    pet.agendaTick(now)
+    pet.weatherTick(now).catch(() => {})
     if (!info) return
     if (info.key !== this.fgKey) {
       this.fgKey = info.key
@@ -114,11 +116,26 @@ class Brain {
     if (this.focusGuard(info, now)) return
     if (this.longSession(now)) return
     if (this.dailySummary()) return
+    if (this.suggest(now)) return
     if (await this.music(now)) return
     if (await this.errorScan(info, now)) return
     if (this.switchLook(info, now)) return
     if (this.periodicLook(info, now)) return
     this.idleAction(info, now)
+  }
+
+  /** Results of her background work wait in an inbox; show one every couple of minutes. */
+  suggest(now) {
+    const pet = this.pet
+    if (!pet.inboxCount() || now - (this.lastSuggest || 0) < 2 * MIN || !this.canSpeak(true)) return false
+    this.lastSuggest = now
+    pet.deliverSuggestion()
+    return true
+  }
+
+  /** Scale a probability or an interval by how welcome this kind of help has been. */
+  wants(kind) {
+    return Math.random() < Math.min(1, this.pet.helpFactor(kind))
   }
 
   // ------------------------------------------------------------ talking budget
@@ -217,13 +234,15 @@ class Brain {
     const hit = senses.isDistraction(info, pet.settings().distractions)
     if (!hit) return false
     const key = `${info.process}|${hit}`
-    if (now - (this.focusNudged.get(key) || 0) < 5 * MIN || !this.canSpeak(true)) return false
+    const last = this.focusNudged.get(key) || 0
+    if (now - last < 5 * MIN || !this.canSpeak(true) || !this.wants('focus')) return false
     this.focusNudged.set(key, now)
     this.noteSpoke()
-    pet.once('sulk', 2)
-    pet.logActivity('look', `专注时间看到「${hit}」，提醒了一下`)
+    const again = now - last < 15 * MIN // caught twice in a row: she gets properly cross
+    pet.once(again ? 'angry' : 'sulk', 2)
+    pet.logActivity('look', `专注时间看到「${hit}」，提醒了一下${again ? '（第二次）' : ''}`)
     pet
-      .say(`说好专注的呢～「${hit}」先放一放吧！`, {
+      .say(again ? `又是「${hit}」！番茄钟还没结束呢，快回去！` : `说好专注的呢～「${hit}」先放一放吧！`, {
         ttl: 15000,
         buttons: [
           { id: 'back', label: '马上回去' },
@@ -233,6 +252,7 @@ class Brain {
       .then((c) => {
         if (c === 'rest') pet.restNow()
         if (c === 'back') pet.changeMood(+1, '听话回去专注')
+        if (c !== pet.REPLACED) pet.recordHelp('focus', c ? 'accepted' : 'ignored')
       })
     return true
   }
@@ -240,7 +260,9 @@ class Brain {
   longSession(now) {
     const pet = this.pet
     const s = this.session
-    if (!s.proc || s.nagged || now - s.since < 50 * MIN || !this.canSpeak()) return false
+    // 50 minutes by default; later if you usually wave the break reminder away.
+    const after = Math.min(120, 50 / pet.helpFactor('break'))
+    if (!s.proc || s.nagged || now - s.since < after * MIN || !this.canSpeak()) return false
     s.nagged = true
     this.noteSpoke()
     const mins = Math.round((now - s.since) / MIN)
@@ -256,7 +278,10 @@ class Brain {
       })
       .then((c) => {
         if (c === 'rest') pet.restNow()
-        this.noteResponse(c === 'rest' ? 'accepted' : c === 'no' ? 'declined' : 'ignored')
+        if (c === pet.REPLACED) return
+        const outcome = c === 'rest' ? 'accepted' : c === 'no' ? 'declined' : 'ignored'
+        this.noteResponse(outcome)
+        pet.recordHelp('break', outcome)
       })
     return true
   }
@@ -281,8 +306,8 @@ class Brain {
     const song = wins.map(senses.musicTitle).find(Boolean) || ''
     if (song === this.lastSong) return false
     this.lastSong = song
-    if (!song || pet.isBusy()) return false
-    pet.once('music', 4)
+    if (!song || pet.isBusy() || pet.isPerched()) return false
+    pet.once(pet.hasUnlock('dance') && Math.random() < 0.4 ? 'dance' : 'music', 4)
     if (now - this.lastSongSaid > 20 * MIN && Math.random() < 0.6 && this.canSpeak()) {
       this.lastSongSaid = now
       this.noteSpoke()
@@ -312,6 +337,7 @@ class Brain {
     if (this.seenErrors.has(sig)) return false
     if (!this.canSpeak(true)) return false // not now: the same error is found again on a later scan
     this.seenErrors.set(sig, now)
+    if (!this.wants('rescue')) return false // she has learned you usually handle errors yourself
     this.lastError = { sig, line: err.line, ocr: text.slice(0, 2000), info, at: now, offered: true, accepted: false, declined: false, researched: false }
     pet.rescueError(this.lastError)
     return true
@@ -322,7 +348,7 @@ class Brain {
     if (!L.switchGap || info.own || info.shell || info.key === this.switchHandledKey) return false
     if (now - this.fgSince < 20 * SEC) return false // stayed on it for a moment
     this.switchHandledKey = info.key
-    if (now - this.lastSwitchLook < L.switchGap * this.backoff()) return false
+    if (now - this.lastSwitchLook < (L.switchGap * this.backoff()) / this.pet.helpFactor('remark')) return false
     if (!this.pet.screenAllowed(info) || !this.canSpeak() || !this.canLook()) return false
     this.lastSwitchLook = now
     this.noteLook()
@@ -333,7 +359,7 @@ class Brain {
   periodicLook(info, now) {
     const L = this.level()
     if (!L.periodic || now < this.nextPeriodic) return false
-    this.nextPeriodic = now + rand(L.periodic[0], L.periodic[1]) * MIN * this.backoff()
+    this.nextPeriodic = now + (rand(L.periodic[0], L.periodic[1]) * MIN * this.backoff()) / this.pet.helpFactor('remark')
     if (info.own || info.shell || !this.pet.screenAllowed(info) || !this.canSpeak() || !this.canLook()) return false
     this.noteLook()
     this.pet.autoLook('periodic', info)
@@ -343,22 +369,33 @@ class Brain {
   idleAction(info, now) {
     const pet = this.pet
     const s = pet.settings()
-    if (!s.idleActions || now < this.nextIdle || pet.isBusy()) return false
+    // While she sits on a window she just sits (desk scenes would float in mid-air).
+    if (!s.idleActions || now < this.nextIdle || pet.isBusy() || pet.isPerched()) return false
     const L = this.level()
     this.nextIdle = now + rand(L.idleEvery[0], L.idleEvery[1]) * MIN
     const mood = pet.mood()
-    const h = new Date().getHours()
-    const pool = ['read', 'eat', 'water', 'stretch', 'sit', 'sit']
+    const d = new Date()
+    const h = d.getHours()
+    const weekend = d.getDay() === 0 || d.getDay() === 6
+    const pool = ['read', 'eat', 'water', 'stretch', 'phone', 'write', 'clean', 'sit']
     if ((h >= 13 && h <= 16) || h >= 22 || h < 6) pool.push('yawn', 'yawn')
-    if (this.lastSong) pool.push('music', 'music')
+    if (h >= 18 || weekend) pool.push('relax', 'relax', 'phone')
+    if (this.lastSong) pool.push('music', 'music', ...(pet.hasUnlock('dance') ? ['dance', 'dance'] : []))
+    if (pet.raining()) pool.push('umbrella', 'umbrella', 'umbrella')
     if (mood <= -2) pool.push('sulk', 'sulk', 'cry')
-    if (mood >= 2) pool.push('cheer', 'giggle')
-    if (s.climbWindows && pet.canClimb(info)) pool.push('climb', 'climb', 'climb')
+    if (mood >= 2) pool.push('cheer', 'giggle', 'laugh')
+    // Sitting on your windows is her favourite; the taskbar edge is the fallback.
+    if (s.climbWindows) pool.push('climb', 'climb', 'climb', 'climb')
+    if (pet.hasUnlock('kitten')) pool.push('kitten')
+    if (pet.hasUnlock('magic')) pool.push('magic')
+    if (pet.hasUnlock('cheersign') && this.session.proc && now - this.session.since > 30 * MIN) pool.push('cheersign', 'cheersign')
+    if (pet.hasUnlock('gift') && now - (pet.store.get('pet').lastGiftAt || 0) > 3 * 864e5) pool.push('gift')
     const act = pick(pool)
     if (act === 'sit') pet.perchOnTaskbar(rand(30, 75) * SEC)
-    else if (act === 'climb') pet.climbWindow(info)
+    else if (act === 'climb') pet.climbAuto()
+    else if (['kitten', 'magic', 'cheersign', 'gift'].includes(act)) pet.idleScene(act)
     else {
-      pet.once(act, act === 'read' || act === 'music' ? 4 : 2)
+      pet.once(act, ['read', 'music', 'phone', 'write', 'relax', 'clean', 'umbrella'].includes(act) ? 4 : 2)
       const lines = LINES.idle[act]
       if (lines && Math.random() < 0.3) pet.say(pick(lines), { ttl: 4000 })
     }
@@ -391,6 +428,7 @@ class Brain {
     const now = Date.now()
     if (now - this.lastClipOffer < 2 * MIN || !this.canSpeak(true)) return
     this.lastClipOffer = now
+    if (!this.wants('clip')) return // learned: you rarely want help with what you copy
     this.noteSpoke()
     pet.clipOffer(text, kind)
   }

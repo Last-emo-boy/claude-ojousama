@@ -1,5 +1,5 @@
 // Run one headless DSH turn with the pet's patch and summarise the events.
-// Usage: node tools/_dsh_probe.js "<prompt>" [permission]
+// Usage: node tools/dsh-probe.js "<prompt>" [permission] [patch.yml]
 const { spawn } = require('child_process')
 const path = require('path')
 const os = require('os')
@@ -7,7 +7,7 @@ const os = require('os')
 const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
 const exe = path.join(local, 'Programs', 'DeepSeek Harness', 'DeepSeek Harness.exe')
 const cli = path.join(local, 'Programs', 'DeepSeek Harness', 'resources', 'app.asar', 'dsh', 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'cli.js')
-const patch = path.join(process.env.APPDATA, 'claude-ojousama', 'dsh-pet-patch.yml')
+const patch = process.argv[4] || path.join(process.env.APPDATA, 'claude-ojousama', 'dsh-pet-patch.yml')
 const prompt = process.argv[2] || 'hi'
 const permission = process.argv[3] || 'read-only'
 

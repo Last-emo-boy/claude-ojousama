@@ -30,7 +30,7 @@ async function peek(pet) {
 async function fakeBug(pet) {
   pet.once('error', 3)
   await pet.say(pick(LINES.prankBug), { ttl: 2600 })
-  pet.once('giggle', 3)
+  pet.once('laugh', 3)
   await pet.say(pick(LINES.prankBugReveal), { ttl: 2600 })
 }
 
@@ -40,7 +40,7 @@ async function dragJunk(pet) {
 
 async function chase(pet) {
   pet.say(pick(LINES.prankChase), { ttl: 3500 })
-  pet.hold('walk')
+  pet.hold('run')
   const end = Date.now() + 4500
   const [w] = pet.size()
   while (Date.now() < end) {
@@ -48,16 +48,21 @@ async function chase(pet) {
     const [x] = pet.position().arr
     const target = c.x - w / 2
     if (Math.abs(target - x) < 12) break
-    await pet.motion.walkTo(x + Math.sign(target - x) * Math.min(80, Math.abs(target - x)), 160)
+    await pet.motion.walkTo(x + Math.sign(target - x) * Math.min(80, Math.abs(target - x)), 220)
   }
-  pet.once('happy', 1)
+  pet.release()
+  pet.once('laugh', 1)
 }
 
+/** Face pressed against the inside of your screen, knocking to be let out. */
 async function knock(pet) {
+  pet.hold('squish')
   pet.say(pick(LINES.prankKnock), { ttl: 3000 })
   await pet.motion.shake(450, 5)
   await sleep(250)
   await pet.motion.shake(450, 5)
+  await sleep(900)
+  pet.release()
   pet.once('wave', 2)
 }
 
@@ -68,8 +73,8 @@ async function hide(pet) {
   const goLeft = home.x + w / 2 < wa.x + wa.width / 2
   // Talk before slipping off-screen: a bubble on a half-hidden window would be clipped.
   await pet.say(pick(LINES.prankHide), { ttl: 1800 })
-  pet.hold('walk')
-  await pet.motion.walkTo(goLeft ? wa.x - w * 0.62 : wa.x + wa.width - w * 0.38, 110, { allowOffscreen: true })
+  pet.hold('run')
+  await pet.motion.walkTo(goLeft ? wa.x - w * 0.62 : wa.x + wa.width - w * 0.38, 200, { allowOffscreen: true })
   pet.release()
   await sleep(6500)
   pet.hold('walk')
@@ -80,19 +85,27 @@ async function hide(pet) {
 }
 
 async function dance(pet) {
-  pet.once('happy', 4)
+  pet.once('dance', 3)
   await pet.say(pick(LINES.prankDance), { ttl: 3000 })
 }
 
-/** Desktop-Goose style: haul a silly memo onto the screen and stick it there. */
+/** Haul a silly memo onto the screen and stick it there. */
 async function pinNote(pet) {
   await pet.postMemo()
 }
 
-const ALL = { peek, fakeBug, dragJunk, chase, knock, hide, dance, pinNote }
+/** A little magic show that ends with a memo appearing on your desktop (unlocked at Lv.3). */
+async function magic(pet) {
+  pet.say(pick(LINES.magicShow), { ttl: 3000 })
+  await pet.once('magic', 3)
+  await pet.postMemo(pick(LINES.magicMemo))
+}
+
+const ALL = { peek, fakeBug, dragJunk, chase, knock, hide, dance, pinNote, magic }
+const LOCKED = { magic: 'magic' } // prank -> unlock id
 
 async function runRandom(pet, name) {
-  const keys = Object.keys(ALL)
+  const keys = Object.keys(ALL).filter((k) => !LOCKED[k] || (pet.hasUnlock && pet.hasUnlock(LOCKED[k])))
   const key = name && ALL[name] ? name : pick(keys)
   await ALL[key](pet)
   return key

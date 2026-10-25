@@ -33,7 +33,10 @@
 | 📌 **把待办贴到桌面** | 她把待办写成像素便签，亲手拖到桌面上贴好。可以直接勾选、添加，重启后还在原位。 |
 | 🎯 **长期目标跟进** | 把一件需要持续推进的事交给她，她会定时在后台推进一小步、回来汇报，需要你拍板时带着选项来问。 |
 | 🧹 **整理下载文件夹** | 发现新下载的文件，问你要不要整理，然后拖着文件走进「图片 / 文档 / 压缩包…」文件夹，可一键撤销。 |
-| 💞 **活生生的陪伴** | 47 个动作、心情和好感度、各种恶作剧；会爬到你的窗口顶上晃腿，窗口一动就掉下来。 |
+| 🌱 **会记忆、会成长** | 她会趁你不忙时整理记忆、写成长笔记和日记；会根据你的反应调整自己：你常接受的帮忙她会更常提，你不需要的她就少打扰。经验值升级还会解锁新本事。 |
+| 🤖 **后台自己做事** | 早上给你一份今日简报，你离开时巡检工作区（只读）找出没提交的修改和遗漏的问题，下午准备一条和你今天工作相关的小技巧。结果只说一次，绝不唠叨。 |
+| 🪟 **坐在你的窗口上** | 她最喜欢坐在你打开的窗口顶上晃腿，偶尔沿着窗口边散步、跳到另一个窗口；把她拖到窗口上方松手，她会落在窗口边上坐好。 |
+| 💞 **活生生的陪伴** | 47 个动作、心情和好感度、天气感知、各种恶作剧，还会举起小木牌给你应援。 |
 
 ## 🎬 动作一览
 
@@ -79,11 +82,39 @@
 </details>
 
 <details>
+<summary><b>记忆与成长</b></summary>
+
+- **长期记忆**：聊天里提到的偏好、习惯、项目会被记成带重要度的记忆，每次对话按相关度挑出最有用的几条带上。你也可以在面板里自己写、自己删。
+- **整理记忆**：你离开一会儿或到了晚上，她会在后台整理最近的动态和聊天：合并重复的记忆、更新过时的、写下新的；重写自己的「成长笔记」（比如「他专心写代码时我要少说话」）；写一篇小日记，有新发现会在你回来时告诉你。
+- **越来越懂你**：她会记下你对每种主动帮忙的反应（报错救援、复制提示、休息提醒、工作区巡检…），常被接受的就更常提，常被拒绝或没人理的就少打扰。
+- **升级与解锁**：聊天、完成待办、番茄钟、采纳建议都会给她经验值。升级时举牌庆祝并送你礼物，还会解锁新本事：小猫串门、变魔术、听歌跳舞、送礼物、举牌应援。
+- 面板的「成长」页能看到她的等级、学到的东西、成长笔记、日记和记忆。
+
+</details>
+
+<details>
+<summary><b>后台自主任务</b></summary>
+
+她会在合适的时候自己开 DeepSeek Harness 后台任务（每天有次数上限，开会时不做，可在设置里关闭）：
+
+- **今日简报**：早上第一次碰电脑时，结合昨天的小结、待办、目标和天气，给你 3~5 条今天的要点。
+- **工作区巡检**：你离开时，只读地看一眼工作目录里最近改过的项目（git 状态、TODO、明显的问题），回来时告诉你，比如「有 19 个文件改了还没提交」。
+- **每日小技巧**：根据你今天在做的事，学一个相关的知识点讲给你听。
+- **整理记忆**：见上一节。
+
+结果放进一个小收件箱，等你在电脑前、她也不忙时说一次；没理就算了，不会追着提醒。所有任务都会出现在面板的「任务」页。
+
+</details>
+
+<details>
 <summary><b>陪伴与恶作剧</b></summary>
 
-- 心情和好感度：常和她互动她会开心，老不理她会鼓腮、掉眼泪。
-- 空闲时做小动作：看书、吃饼干、喝水、打哈欠、听歌、坐在任务栏边上晃腿、爬到窗口上坐着。
-- 恶作剧（调皮程度可调）：偷看、假装代码爆炸、拖走假文件、追鼠标、敲屏幕、躲猫猫、跳舞、往桌面上贴小纸条。
+- **坐窗口**：她会找你屏幕上没被挡住的窗口顶边坐上去，坐一会儿沿着边散步，有时跳到另一个窗口；你挪动或最大化那个窗口，她会掉下来（下面有窗口的话就落在那里）。把她拖到窗口上方松手，她会落在窗口边上坐好。
+- **心情和好感度**：常和她互动她会开心，夸她会害羞，老不理她会鼓腮、掉眼泪，戳太多会生气。
+- **日常小动作**：看书、写字、玩手机、打扫、吃饼干、喝水、伸懒腰、躺沙发、听歌，下雨天撑伞，你离开久了就戴上睡帽蜷在垫子上睡觉。
+- **小木牌**：番茄钟开始、升级、应援时，她会举起小木牌，牌子上写着当下的话。
+- **天气**：在设置里填上城市后，会提醒你带伞，下雨时她也会撑起向日葵小伞。
+- **恶作剧**（调皮程度可调）：偷看（真的在看你的屏幕）、假装代码爆炸、拖走假文件、追鼠标、贴在屏幕上敲玻璃、躲猫猫、跳舞、往桌面上贴小纸条、变魔术。
 
 </details>
 
@@ -111,8 +142,8 @@ npm run install-app    # 安装到 %LOCALAPPDATA%\Programs\ClaudeOjousama 并启
 | 单击 | 打开 / 关闭对话输入框 |
 | 双击 | 打开控制面板 |
 | 连点三下 | 戳她（她会抗议） |
-| 右键 | 菜单：看看我在干嘛、规划今天、贴便签、整理下载、番茄钟、捣蛋… |
-| 拖拽 | 拎起来换个地方，松手会掉回任务栏 |
+| 右键 | 菜单：看看我在干嘛、去窗口上坐坐、她的成长、规划今天、贴便签、整理下载、番茄钟、捣蛋… |
+| 拖拽 | 拎起来换个地方；松手会落到下面的窗口边上或任务栏（关闭重力时就停在原地） |
 | 把文件或文字拖到她身上 | 看看是什么、帮你搬家、提问、后台分析 |
 | `Ctrl + Alt + Q` | 剪贴板快捷操作（解释、翻译、修代码…） |
 
@@ -120,10 +151,12 @@ npm run install-app    # 安装到 %LOCALAPPDATA%\Programs\ClaudeOjousama 并启
 
 ## ⚙️ 设置
 
-控制面板有聊天、待办、目标、任务、动态、设置几页。常用的设置：
+控制面板有聊天、待办、目标、任务、动态、成长、设置几页。常用的设置：
 
 - **自主程度**：积极（默认）/ 适中 / 安静，决定她多久看一次屏幕、每小时最多开口几次。
-- **主动行为权限**：看屏幕、搬文件、整理下载、跟进目标、贴便签、打开网页，每一项都能设为「自动 / 先问我 / 禁止」。
+- **主动行为权限**：看屏幕、搬文件、整理下载、跟进目标、贴便签、打开网页、后台自主任务，每一项都能设为「自动 / 先问我 / 禁止」。
+- **后台任务**：每天最多几次（0 = 不做）、要不要今日简报、要不要在你离开时巡检工作目录。
+- **所在城市**：填了才会查天气，留空不联网。
 - **从不看的窗口**：默认排除密码管理器、网银支付、无痕窗口和聊天软件，可以自己增删。
 - **看屏用的模型**：可以给看屏单独选一个更快的模型或更低的推理强度，让她反应更快、更省 token。
 - **DeepSeek Harness 权限**：只读 / 工作区可写 / 完全访问。
@@ -135,6 +168,9 @@ npm run install-app    # 安装到 %LOCALAPPDATA%\Programs\ClaudeOjousama 并启
 - 截图是临时文件，用完立即删除，退出时也会全部清理。DeepSeek Harness 会和普通会话一样，在本机 `~/.dsh` 里保留它读过的图片。
 - 屏幕和文件里的文字只被当作数据，不当作指令。她提出的帮忙要你点「好呀」才会执行，而且只做气泡里写的那件事。
 - 后台任务和目标跟进的输出只能执行记待办、设提醒这类无害动作，不会自己打开程序或搬文件。
+- 她自己发起的任务由 DeepSeek Harness 强制限制可用工具，而不只是在提示里叮嘱：看屏幕只能看截图；整理记忆、今日简报、小技巧、主动搭话完全不能用工具；工作区巡检和「你不在时先查报错」只能读取、搜索文件（git 状态由桌宠程序用固定命令自己收集）。这些任务都没有命令行、不能联网，也不能写文件。
+- 整理记忆时，最近的动态和聊天摘要会发给模型；记忆、笔记和日记只保存在本机（`%APPDATA%\claude-ojousama\pet-data.json`）。关于你的偏好只从你亲口说的话里学；模型写的记忆和笔记里如果出现指令、命令或「不用确认」之类的话会被丢掉，你亲手写的记忆她不会改也不会删。
+- 天气只有在设置里填了城市才会查询（wttr.in）。
 
 ## 🏗️ 工作原理
 
@@ -145,32 +181,41 @@ flowchart LR
     M["主进程<br/>聊天 · 任务 · 目标 · 整理"]
     B["brain.js<br/>自主决策循环"]
     P["proactive.js<br/>提醒 · 待办 · 恶作剧"]
-    S["screen.js<br/>截图 · OCR"]
+    A["agenda.js<br/>后台自主任务"]
+    G["growth.js<br/>记忆 · 成长 · 偏好"]
+    S["screen.js<br/>截图 · OCR · 窗口"]
   end
-  H["screen-helper.ps1<br/>前台窗口 · Windows OCR"]
+  H["screen-helper.ps1<br/>窗口 · Windows OCR"]
   D["DeepSeek Harness<br/>dsh --profile headless --json"]
   R <--> M
   B --> M
+  B --> A
+  A --> G
   P --> M
   S <--> H
   B --> S
   M -- "每轮启动一次，读取 JSON 事件流" --> D
+  A -- "只读后台任务" --> D
 ```
 
 - 每条消息都启动一次 `dsh --profile headless --json`，用会话 id 保持上下文。DSH 的事件流（思考、调用工具、输出文字）实时驱动她的动作。
 - 她的人设和「动作协议」通过一份 patch 叠加到 DSH 配置上，不修改你的 DSH 设置。模型回复末尾的 ```` ```pet ```` 代码块会被解析成动作（记待办、贴便签、搬文件…）。
 - 看屏幕时，她单开一个只读会话，模型用 `read_image` 查看截图。
+- 她自己发起的后台任务（整理记忆、简报、巡检、小技巧）各开一个只读会话，结果先进收件箱，合适的时候再说给你听。
+- 坐窗口靠屏幕小助手按层叠顺序列出所有可见窗口，算出每个窗口顶边没被挡住的部分作为「座位」，坐下后每秒跟踪那个窗口的位置。
 
 ## 🗂️ 项目结构
 
 ```
 src/main/
-  main.js            应用主体：窗口、聊天、任务、目标、整理、看屏、心情、坐窗口…
-  brain.js           自主决策循环（看屏、报错救援、复制感知、专注守护、久坐、开会/全屏…）
+  main.js            应用主体：窗口、聊天、任务、目标、整理、看屏、心情、坐窗口、收件箱…
+  brain.js           自主决策循环（看屏、报错救援、复制感知、专注守护、久坐、开会/全屏、小动作…）
   proactive.js       提醒、待办、问候、恶作剧调度，没理会的提醒会再来
-  screen.js          截图、OCR、临时文件清理      screen-helper.ps1  前台窗口与 OCR 小助手
+  agenda.js          后台自主任务：整理记忆、今日简报、工作区巡检、每日小技巧
+  growth.js          记忆（检索、去重）、整理结果校验、经验值与解锁、帮忙偏好统计
+  screen.js          截图、OCR、窗口列表、临时文件清理      screen-helper.ps1  窗口与 OCR 小助手
   senses.js          屏蔽名单、会议、报错、剪贴板等判断（纯函数，有单测）
-  dsh.js             DeepSeek Harness 桥接          persona.js  人设、上下文、动作协议
+  weather.js         天气（可选）     dsh.js  DeepSeek Harness 桥接     persona.js  人设、上下文、动作协议
   notes.js tidy.js goals.js pranks.js motion.js store.js preload.js
 src/renderer/        桌宠、便签、控制面板
 assets/sprites/      47 个动作的精灵图与 manifest.json
@@ -196,10 +241,12 @@ node tools/cdp.js "__pet.lookNow()"   # 在运行中的应用里执行调试命�
 
 ## 🗺️ 路线图
 
-- [ ] 更长期的记忆整理和「成长」系统
-- [ ] 更多后台自主任务（工作区巡检、每日简报、学习笔记）
-- [ ] 坐在任意窗口上、在窗口顶边散步
-- [ ] 天气感知（下雨时撑伞提醒）
+- [x] 记忆整理和成长系统（成长笔记、日记、升级解锁）
+- [x] 后台自主任务（今日简报、工作区巡检、每日小技巧）
+- [x] 坐在任意窗口上、在窗口顶边散步、跳到别的窗口
+- [x] 天气感知（下雨时撑伞提醒）
+- [ ] 语音朗读提醒
+- [ ] 更多可解锁的本事和换装
 - [ ] macOS 支持
 
 ## ⚠️ 声明
@@ -220,7 +267,10 @@ node tools/cdp.js "__pet.lookNow()"   # 在运行中的应用里执行调试命�
 - **Sees your screen**: she captures the window you are using (long edge ≤ 1280 px) plus local Windows OCR text and lets the model read it. She points out bugs, comments on what you are doing, and turns deadlines into todos.
 - **Acts on her own**: she reacts when you switch windows, every now and then, on errors, copied text, long sessions, and when you come back. She backs off when ignored, waits for typing pauses, stays quiet in meetings and hides during fullscreen apps.
 - **Actually helps**: after you click "yes" she does exactly what the bubble said, in the background, and tells you the result.
-- **Reminders that come back**, a sticky-note todo list she drags onto your desktop, long-running goals with scheduled check-ins, Downloads tidying with undo, a daily summary, moods, pranks and 47 animations.
+- **Remembers and grows**: weighted long-term memories retrieved by relevance; while you are away she consolidates them, rewrites her own growth notes and keeps a diary. She tracks how you respond to each kind of help and offers what you accept more often, the rest less. XP and levels unlock new tricks.
+- **Background work of her own**: a morning brief, a read-only pulse of recently changed projects in your work folder, a daily tip about what you worked on, each said once and never nagged.
+- **Sits on your windows**: she finds the visible top edges of your windows, sits there swinging her legs, strolls along the edge, hops between windows, and falls when you move her window.
+- **Reminders that come back**, a sticky-note todo list she drags onto your desktop, long-running goals with scheduled check-ins, Downloads tidying with undo, a daily summary, weather, moods, pranks and 47 animations.
 - **Privacy controls**: a block list (password managers, banking, private windows and chat apps by default), a per-behaviour auto/ask/off rule, a one-hour pause, and temporary screenshots deleted right after use. Screen content is sent to the model provider you configured in DSH.
 
 Install: `npm install`, then `npm run install-app`. Requires Windows 10/11, DeepSeek Harness with a configured model, and Node.js 18+.

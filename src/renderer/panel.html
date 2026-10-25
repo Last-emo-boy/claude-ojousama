@@ -19,6 +19,7 @@
         <button data-tab="goals">目标</button>
         <button data-tab="tasks">任务</button>
         <button data-tab="activity">动态</button>
+        <button data-tab="growth">成长</button>
         <button data-tab="settings">设置</button>
       </nav>
     </header>
@@ -105,6 +106,27 @@
         <h3>动态 <span class="muted">她自己做过的事</span></h3>
         <ul id="act-list" class="list act"></ul>
         <div class="row"><span class="grow"></span><button id="act-clear">清空动态</button></div>
+      </section>
+
+      <section id="tab-growth" class="tab">
+        <div class="lvl">
+          <b id="lvl-name">Lv.1</b>
+          <div class="bar"><div id="lvl-bar"></div></div>
+          <span id="lvl-xp" class="muted"></span>
+        </div>
+        <ul id="unlock-list" class="chips"></ul>
+        <h3>她学到的 <span class="muted">你对每种主动帮忙的反应，会改变她以后多常这样做</span></h3>
+        <ul id="stat-list" class="list"></ul>
+        <h3>成长笔记 <span class="muted">她对怎样陪伴你的认识</span></h3>
+        <ul id="note-list" class="list"></ul>
+        <h3>日记</h3>
+        <ul id="diary-list" class="list diary"></ul>
+        <h3>她最近学了</h3>
+        <ul id="learn-list" class="chips"></ul>
+        <div class="row">
+          <button id="reflect-now" class="primary">🌱 现在整理一次记忆</button>
+          <span id="reflect-state" class="muted"></span>
+        </div>
         <h3>她记得的事</h3>
         <form id="mem-form" class="row">
           <input id="mem-text" placeholder="让她记住…（例如：我每天 10 点开站会）" maxlength="200" required />
@@ -221,6 +243,19 @@
         <label class="check"><input data-key="climbWindows" type="checkbox" />偶尔爬到你的窗口上坐着</label>
         <label class="check"><input data-key="idleActions" type="checkbox" />空闲时做些小动作（看书、吃饼干、坐着晃腿…）</label>
         <label>每天几点写今日小结（留空关闭；保存在「文档\Claude Ojousama 日报」）<input data-key="summaryTime" type="time" /></label>
+        <label>她自己在后台做的事（整理记忆、每日简报、工作区巡检、每日小技巧）
+          <select data-rule="agenda">
+            <option value="auto">自动</option>
+            <option value="off">关闭</option>
+          </select>
+        </label>
+        <label>每天最多几次后台任务<input data-key="agendaPerDay" type="number" min="0" max="30" /></label>
+        <label class="check"><input data-key="morningBrief" type="checkbox" />早上给我一份今日简报</label>
+        <label class="check"><input data-key="workspacePulse" type="checkbox" />我离开时巡检工作目录（只读文件，不联网、不运行命令）</label>
+        <label>所在城市（用于天气和带伞提醒；留空不联网查天气）
+          <div class="row"><input data-key="weatherCity" placeholder="例如：Shanghai 或 上海" /><button type="button" id="weather-refresh">刷新</button></div>
+        </label>
+        <p id="weather-state" class="muted"></p>
         <label>看屏和自主决策用的模型
           <select id="glance-model"></select>
         </label>

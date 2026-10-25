@@ -18,7 +18,8 @@ const timerEl = $('timer')
 let cfg = null // { manifest, scale, size, maxW, maxH, bubbleH }
 const sheets = {} // name -> { img, alpha: Uint8ClampedArray, w, h, frames, bands: [[{y0,y1,x0,x1}]] }
 let base = { name: 'idle', start: performance.now() }
-let override = null // { name, mode: 'once' | 'hold', loops, start }
+let override = null // { name, mode: 'once' | 'hold', loops, start, resume? }
+let signText = null // text written on the board of the 'sign' animation
 let face = 1
 let carryItem = null
 let carryIcon = null
@@ -101,7 +102,9 @@ function activeAnim(now) {
     if (override.mode === 'once') {
       const idx = Math.floor(((now - override.start) / 1000) * a.fps)
       if (idx >= a.frames * (override.loops || 1)) {
-        override = null
+        // A one-shot played over a held pose (sitting, looking…) goes back to that pose.
+        override = override.resume || null
+        if (override) return override
         return { name: base.name, start: base.start, mode: 'base' }
       }
     }
@@ -173,6 +176,24 @@ function drawBoxIcon(c, x, y, size) {
   c.fillRect(x + 4 * p, y + 10 * p, 8 * p, 3 * p)
 }
 
+/** Write signText on the blank board, shrinking the font until it fits (never mirrored). */
+function drawSignText(a, b, pl, y) {
+  const bx = face < 0 ? pl.x + (a.w - b.x - b.w) * pl.s : pl.x + b.x * pl.s
+  const by = y + b.y * pl.s
+  const bw = b.w * pl.s
+  const bh = b.h * pl.s
+  const lines = String(signText).split('\n').slice(0, 2)
+  let size = Math.floor((bh * 0.72) / lines.length)
+  const fontOf = (px) => `bold ${px}px "Microsoft YaHei UI", "Microsoft YaHei", sans-serif`
+  ctx.font = fontOf(size)
+  while (size > 7 && Math.max(...lines.map((l) => ctx.measureText(l).width)) > bw * 0.88) ctx.font = fontOf(--size)
+  ctx.fillStyle = '#5a3418'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const lh = size * 1.1
+  lines.forEach((l, i) => ctx.fillText(l, bx + bw / 2, by + bh / 2 + (i - (lines.length - 1) / 2) * lh + 1))
+}
+
 function draw(now) {
   if (!cfg) return
   const anim = activeAnim(now)
@@ -180,7 +201,8 @@ function draw(now) {
   if (!a) return
   const idx = frameIndex(anim, now)
   const showCarry = carryItem && anim.name === 'drag'
-  const key = `${anim.name}|${idx}|${face}|${showCarry ? carryItem.label : ''}|${cfg.scale}`
+  const showSign = anim.name === 'sign' && signText && a.boards
+  const key = `${anim.name}|${idx}|${face}|${showCarry ? carryItem.label : ''}|${cfg.scale}|${showSign ? signText : ''}`
   if (key === lastKey) return
   lastKey = key
   const dpr = window.devicePixelRatio || 1
@@ -207,6 +229,8 @@ function draw(now) {
   }
   ctx.drawImage(a.img, idx * a.w, 0, a.w, a.h, pl.x, y, pl.w, pl.h)
   ctx.restore()
+
+  if (showSign) drawSignText(a, a.boards[idx] || a.boards[0], pl, y)
 
   if (showCarry) {
     const rope = (a.rope && a.rope[idx]) || a.h * 0.68
@@ -488,10 +512,17 @@ pet.on('pet:cmd', async (cmd) => {
       if (cmd.mode === 'base') {
         if (base.name !== cmd.name) base = { name: cmd.name, start: now }
       } else if (cmd.mode === 'release') override = null
-      else if (sheets[cmd.name]) override = { name: cmd.name, mode: cmd.mode, loops: cmd.loops || 1, start: now }
+      else if (sheets[cmd.name]) {
+        const resume = cmd.mode === 'once' && override ? (override.mode === 'hold' ? override : override.resume || null) : null
+        override = { name: cmd.name, mode: cmd.mode, loops: cmd.loops || 1, start: now, resume }
+      }
       lastKey = ''
       break
     }
+    case 'sign':
+      signText = cmd.text ? String(cmd.text).slice(0, 24) : null
+      lastKey = ''
+      break
     case 'face':
       face = cmd.dir < 0 ? -1 : 1
       lastKey = ''

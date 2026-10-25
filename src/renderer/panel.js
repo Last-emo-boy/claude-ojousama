@@ -208,9 +208,50 @@ function renderActivity() {
   ml.innerHTML = ''
   const mems = snap.memories || []
   if (!mems.length) ml.append(el('li', { class: 'empty' }, '还没有记住什么'))
-  for (const m of [...mems].reverse()) {
-    ml.append(el('li', {}, el('span', { class: 'txt' }, '🧠 ' + m.text), el('span', { class: 'due' }, fmt(m.ts)), el('button', { title: '让她忘掉', onclick: () => pet.invoke('memory:remove', m.id) }, '✕')))
+  const KIND = { preference: '偏好', habit: '习惯', fact: '事实', project: '项目', person: '人' }
+  for (const m of [...mems].sort((a, b) => (b.weight || 3) - (a.weight || 3) || b.ts - a.ts)) {
+    ml.append(
+      el(
+        'li',
+        {},
+        el('span', { class: 'txt' }, `${'★'.repeat(m.weight || 3)} ${m.text}`),
+        el('span', { class: 'due' }, `${KIND[m.kind] || ''}${m.source === 'user' ? ' · 你写的' : m.source === 'reflect' ? ' · 整理' : ''}`),
+        el('button', { title: '让她忘掉', onclick: () => pet.invoke('memory:remove', m.id) }, '✕'),
+      ),
+    )
   }
+}
+
+function renderGrowth() {
+  const g = snap.growth
+  if (!g) return
+  const span = Math.max(1, g.levelNext - g.levelStart)
+  $('#lvl-name').textContent = `Lv.${g.level}`
+  $('#lvl-bar').style.width = Math.min(100, Math.round(((g.xp - g.levelStart) / span) * 100)) + '%'
+  $('#lvl-xp').textContent = `${g.xp} / ${g.levelNext} XP`
+  const ul = $('#unlock-list')
+  ul.innerHTML = ''
+  for (const u of g.unlocks) ul.append(el('li', { class: u.open ? 'open' : '' }, `${u.open ? '✓' : '🔒'} Lv.${u.level} ${u.label}`))
+  const sl = $('#stat-list')
+  sl.innerHTML = ''
+  if (!g.stats.length) sl.append(el('li', { class: 'empty' }, '还在观察你喜欢哪种帮忙～'))
+  for (const s of g.stats) {
+    const trend = s.factor >= 1.2 ? '↑ 会更常这样做' : s.factor <= 0.7 ? '↓ 以后少打扰' : '→ 保持'
+    sl.append(el('li', {}, el('span', { class: 'txt' }, s.label), el('span', { class: 'due' }, `接受 ${s.accepted} · 拒绝 ${s.declined} · 没理 ${s.ignored}`), el('span', { class: 'trend' }, trend)))
+  }
+  const nl = $('#note-list')
+  nl.innerHTML = ''
+  if (!g.notes.length) nl.append(el('li', { class: 'empty' }, '整理过记忆后，她会在这里写下学到的东西'))
+  for (const n of g.notes) nl.append(el('li', {}, el('span', { class: 'txt' }, '🌱 ' + n)))
+  const dl = $('#diary-list')
+  dl.innerHTML = ''
+  if (!g.diary.length) dl.append(el('li', { class: 'empty' }, '还没有日记'))
+  for (const d of g.diary) dl.append(el('li', {}, el('b', {}, d.date), el('span', { class: 'txt' }, d.text)))
+  const ll = $('#learn-list')
+  ll.innerHTML = ''
+  for (const l of g.learned) ll.append(el('li', { class: 'open' }, '💡 ' + l.topic))
+  $('#reflect-state').textContent = snap.agendaRunning ? `正在：${({ reflect: '整理记忆', brief: '准备简报', pulse: '巡检工作区', tip: '学习' })[snap.agendaRunning] || snap.agendaRunning}…` : g.lastReflectAt ? `上次整理：${fmt(g.lastReflectAt)}` : '还没整理过'
+  $('#reflect-now').disabled = !!snap.agendaRunning
 }
 
 function renderSettings() {
@@ -266,6 +307,8 @@ function render() {
   renderGoals()
   renderTasks()
   renderActivity()
+  renderGrowth()
+  $('#weather-state').textContent = snap.weather ? `现在：${snap.weather}` : snap.settings.weatherCity ? '还没拿到天气（检查城市名或网络）' : ''
   renderSettings()
   $('#note-post').textContent = snap.noteOpen ? '📌 便签已贴出' : '📌 贴到桌面'
 }
@@ -332,7 +375,7 @@ for (const input of $$('[data-key]')) {
     const key = input.dataset.key
     let v = input.type === 'checkbox' ? input.checked : input.value
     if (['scale'].includes(key)) v = Number(v)
-    if (['mischief', 'waterMinutes', 'llmRemarkMinutes', 'nagMinutes'].includes(key)) v = Math.max(0, Number(v) || 0)
+    if (['mischief', 'waterMinutes', 'llmRemarkMinutes', 'nagMinutes', 'agendaPerDay'].includes(key)) v = Math.max(0, Number(v) || 0)
     pet.invoke('settings:set', { [key]: v })
   })
 }
@@ -345,11 +388,21 @@ for (const ta of $$('[data-list]')) {
 $('#tidy-now').addEventListener('click', () => pet.invoke('tidy:now'))
 $('#note-post').addEventListener('click', () => pet.invoke('note:post'))
 $('#act-clear').addEventListener('click', () => pet.invoke('activity:clear'))
-$('#mem-form').addEventListener('submit', (e) => {
+$('#reflect-now').addEventListener('click', () => pet.invoke('growth:reflect'))
+$('#weather-refresh').addEventListener('click', () => pet.invoke('weather:refresh'))
+$('#mem-form').addEventListener('submit', async (e) => {
   e.preventDefault()
-  const t = $('#mem-text').value.trim()
-  if (t) pet.invoke('memory:add', t)
-  $('#mem-text').value = ''
+  const input = $('#mem-text')
+  const t = input.value.trim()
+  if (!t) return
+  const m = await pet.invoke('memory:add', t)
+  if (m) input.value = ''
+  else {
+    // Keep the text so it can be shortened; say why it was not saved.
+    input.setCustomValidity('没记住：一条最多 200 字，或者她已经记得这件事了')
+    input.reportValidity()
+    setTimeout(() => input.setCustomValidity(''), 2500)
+  }
 })
 $('#goal-form').addEventListener('submit', (e) => {
   e.preventDefault()
