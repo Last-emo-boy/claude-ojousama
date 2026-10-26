@@ -34,18 +34,15 @@ jobs:
             artifact: linux-x64
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-    # Only a published release may write (upload its installers); every other run stays read-only.
-    permissions:
-      contents: ${{ github.event_name == 'release' && 'write' || 'read' }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check release tag matches package.json
         if: github.event_name == 'release'
         shell: bash
         run: |
           want="v$(node -p "require('./package.json').version")"
           [ "$GITHUB_REF_NAME" = "$want" ] || { echo "tag $GITHUB_REF_NAME != $want"; exit 1; }
-      - uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.18.0'
           cache: npm
@@ -60,7 +57,7 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a env OJOUSAMA_NATIVE_X11_TEST=1 python3 tests/linux-native.test.py
       - run: npm run dist
-      - uses: actions/upload-artifact@v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.artifact }}
           if-no-files-found: error
@@ -71,13 +68,27 @@ jobs:
             dist/*.AppImage
             dist/*.deb
           retention-days: 14
-      - name: Upload installers to the release
-        if: github.event_name == 'release'
+
+  # Only a published release gets a job with write access: it attaches the four builds' installers.
+  release:
+    name: Attach installers to the release
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: installers
+          merge-multiple: true
+      - name: Upload installers
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           shopt -s nullglob
-          files=(dist/*.exe dist/*.zip dist/*.dmg dist/*.AppImage dist/*.deb)
+          files=(installers/*.exe installers/*.zip installers/*.dmg installers/*.AppImage installers/*.deb)
           [ ${#files[@]} -gt 0 ] || { echo "no installers"; exit 1; }
+          ls -la installers
           gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
