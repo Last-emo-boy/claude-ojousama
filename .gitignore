@@ -18,3 +18,6 @@ _*.jpg
 # any scratch file in the project root starting with "_"
 /_*
 *.log
+
+# generated promo media (rebuild with python tools/promo/cards.py / video.py)
+/promo/
