@@ -14,6 +14,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve))
 
 function fakeServer(options = {}, handlers = {}) {
   const requests = [], events = []
+  const protocol = new EventEmitter()
   let spawned
   const child = new EventEmitter()
   child.stdout = new PassThrough()
@@ -26,6 +27,7 @@ function fakeServer(options = {}, handlers = {}) {
     write(chunk, _, callback) {
       const message = JSON.parse(chunk.toString())
       requests.push(message)
+      protocol.emit('message', message)
       callback()
       if (message.method) queueMicrotask(() => {
         if (handlers[message.method]) handlers[message.method](message, send)
@@ -44,8 +46,21 @@ function fakeServer(options = {}, handlers = {}) {
   })
   run.on('event', (event) => events.push(event))
   const done = once(run, 'done').then(([result]) => result)
-  const ready = async () => { for (let i = 0; i < 10 && !requests.some((r) => r.method === 'turn/start'); i++) await tick() }
-  return { run, child, requests, events, send, done, ready, spawned: () => spawned }
+  const ended = (result) => new Error('Codex ended before the expected protocol message: ' + (result.error || 'exit ' + result.code))
+  const waitForRequest = (matches) => {
+    const existing = requests.find(matches)
+    if (existing) return Promise.resolve(existing)
+    if (run.done) return done.then((result) => { throw ended(result) })
+    return new Promise((resolve, reject) => {
+      const cleanup = () => { protocol.off('message', onMessage); run.off('done', onDone) }
+      const onMessage = (message) => { if (matches(message)) { cleanup(); resolve(message) } }
+      const onDone = (result) => { cleanup(); reject(ended(result)) }
+      protocol.on('message', onMessage)
+      run.once('done', onDone)
+    })
+  }
+  const ready = async () => { await waitForRequest((r) => r.method === 'turn/start'); await tick() }
+  return { run, child, requests, events, send, done, ready, waitForRequest, spawned: () => spawned }
 }
 
 function complete(server, text = 'done') {
@@ -217,6 +232,49 @@ test('restricted questions are answered empty immediately without user input UI'
   }
 })
 
+test('scan readiness waits for asynchronous workspace canonicalization', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pet-scan-startup-'))
+  const original = fs.promises.realpath
+  let release, enter, s
+  const gate = new Promise((resolve) => { release = resolve })
+  const entered = new Promise((resolve) => { enter = resolve })
+  fs.promises.realpath = async (...args) => {
+    if (args[0] === root) { enter(); await gate }
+    return original(...args)
+  }
+  try {
+    s = fakeServer({ tools: 'scan', cwd: root, scanRoot: root })
+    let ready = false
+    const starting = s.ready().then(() => { ready = true })
+    await entered
+    for (let i = 0; i < 20; i++) await tick()
+    assert.equal(ready, false)
+    release()
+    await starting
+    assert.equal(s.requests.some((r) => r.method === 'thread/start'), true)
+    complete(s)
+    await s.done
+  } finally {
+    release()
+    fs.promises.realpath = original
+    if (s && !s.run.done) { s.run.kill(); await s.done }
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('scan startup errors are surfaced by the protocol waiter', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pet-scan-invalid-'))
+  const file = path.join(root, 'not-a-directory')
+  fs.writeFileSync(file, 'fixture')
+  try {
+    const s = fakeServer({ tools: 'scan', scanRoot: file })
+    await assert.rejects(s.ready(), /Scan workspace must be a directory/)
+    assert.equal((await s.done).ok, false)
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('bounded scan reads/searches only its canonical workspace, including symlink boundaries', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pet-scan-'))
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'pet-outside-'))
@@ -234,12 +292,7 @@ test('bounded scan reads/searches only its canonical workspace, including symlin
     async function call(tool, args) {
       const requestId = id++
       s.send({ id: requestId, method: 'item/tool/call', params: { threadId: 'thread-1', tool, arguments: args } })
-      for (let i = 0; i < 50; i++) {
-        const response = s.requests.find((r) => r.id === requestId)
-        if (response) return response.result
-        await new Promise((r) => setTimeout(r, 2))
-      }
-      throw new Error('No scan response')
+      return (await s.waitForRequest((r) => r.id === requestId && !r.method)).result
     }
     const read = await call('pet_read_file', { path: 'a.txt' })
     assert.equal(read.success, true)

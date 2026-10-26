@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import select
 import shutil
+import socket
 import struct
 import subprocess
 import sys
@@ -94,6 +95,25 @@ def synthetic_png(file):
         chunk(b'IDAT', zlib.compress(data)) + chunk(b'IEND', b''))
 
 
+def fixture_identity(hwnd, pid):
+    identity = subprocess.check_output(['xprop', '-id', str(hwnd), '_NET_WM_PID', 'WM_CLASS'], text=True)
+    print('Fixture identity before EWMH setup: ' + identity.strip(), flush=True)
+    match = re.search(r'_NET_WM_PID\(CARDINAL\)\s*=\s*(\d+)', identity)
+    if match:
+        require(int(match.group(1)) == pid, 'Fixture advertised a different process ID: ' + identity)
+    else:
+        require('_NET_WM_PID' in identity and ('not found' in identity or 'no such atom' in identity),
+            'Unexpected PID property format: ' + identity)
+        # Athena xmessage can omit this optional EWMH client property. Supply it
+        # only for our known child; a mismatched existing PID must still fail.
+        subprocess.run(['xprop', '-id', str(hwnd), '-f', '_NET_WM_PID', '32c', '-set', '_NET_WM_PID', str(pid)], check=True)
+        subprocess.run(['xprop', '-id', str(hwnd), '-f', 'WM_CLIENT_MACHINE', '8s', '-set',
+            'WM_CLIENT_MACHINE', socket.gethostname()], check=True)
+    actual = subprocess.check_output(['xprop', '-id', str(hwnd), '_NET_WM_PID'], text=True)
+    match = re.search(r'_NET_WM_PID\(CARDINAL\)\s*=\s*(\d+)', actual)
+    require(match and int(match.group(1)) == pid, 'Fixture PID property was not established: ' + actual)
+
+
 def main():
     require(sys.platform == 'linux', 'This native fixture requires Linux')
     require(os.environ.get('OJOUSAMA_NATIVE_X11_TEST') == '1' and os.environ.get('DISPLAY'),
@@ -125,7 +145,10 @@ def main():
                     lambda values: any(value['title'] == TITLE for value in values), 'the controlled X11 window')
                 info = next(value for value in listed if value['title'] == TITLE)
                 hwnd = info['hwnd']
-                require(hwnd > 0 and info['pid'] == window.pid and info['process'] == 'xmessage', 'Window identity did not match the fixture')
+                fixture_identity(hwnd, window.pid)
+                info = next(value for value in helper.request('wins')['windows'] if value['hwnd'] == hwnd)
+                require(hwnd > 0 and info['pid'] == window.pid and info['process'] == 'xmessage',
+                    'Window identity did not match the fixture: ' + json.dumps({'got': info, 'expectedPid': window.pid}))
 
                 # Compare to independent X11 utilities, including EWMH frame decorations.
                 geometry = subprocess.check_output(['xwininfo', '-id', str(hwnd), '-stats'], text=True)
