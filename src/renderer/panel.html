@@ -74,7 +74,7 @@
 
       <section id="tab-goals" class="tab">
         <h3>目标 · 持续跟进</h3>
-        <p class="muted">把需要长期跟进的事交给她：到点后她会在后台用 DSH 推进一小步，回来向你汇报；需要你拍板时会带着选项来问你。</p>
+        <p class="muted">把需要长期跟进的事交给她：到点后她会在后台推进一小步，回来向你汇报；需要你拍板时会带着选项来问你。</p>
         <form id="goal-form">
           <input id="goal-title" placeholder="例如：每天汇总 deepseek-harness 仓库的新 issue" maxlength="60" required />
           <textarea id="goal-detail" rows="2" placeholder="说明 / 标准 / 范围（可选）"></textarea>
@@ -94,7 +94,7 @@
 
       <section id="tab-tasks" class="tab">
         <h3>后台任务</h3>
-        <p class="muted">交给 Claude Ojousama 在后台慢慢做，完成后会通知你。每个任务是一个独立的 DSH 会话。</p>
+        <p class="muted">交给 Claude Ojousama 在后台慢慢做，完成后会通知你。每个任务使用独立会话。</p>
         <form id="task-form">
           <textarea id="task-text" rows="3" placeholder="例如：把 Downloads 里的图片按月份整理成文件夹，并汇报整理结果" required></textarea>
           <div class="row"><span class="grow"></span><button class="primary">开始任务</button></div>
@@ -139,11 +139,53 @@
         <h3>基本</h3>
         <label>怎么称呼你<input data-key="userName" placeholder="默认：主人" /></label>
         <label>桌宠大小 <span id="scale-val"></span><input data-key="scale" type="range" min="0.75" max="3" step="0.25" /></label>
-        <label class="check"><input data-key="gravity" type="checkbox" />拖动松手后掉回任务栏</label>
+        <label class="check"><input data-key="gravity" type="checkbox" />拖动松手后落回屏幕底部</label>
         <label class="check"><input data-key="autoStart" type="checkbox" />开机自动启动</label>
-        <label>剪贴板快捷键<input data-key="hotkey" placeholder="Control+Alt+Q" /></label>
+        <label>剪贴板快捷键<input data-key="hotkey" placeholder="留空关闭" /></label>
 
-        <h3>DeepSeek Harness 内核</h3>
+        <h3>AI 内核</h3>
+        <label>后端
+          <select data-key="backend">
+            <option value="codex">Codex</option>
+            <option value="dsh">DeepSeek Harness</option>
+          </select>
+        </label>
+        <p id="backend-status" class="muted" role="status" aria-live="polite"></p>
+        <div data-backend="codex">
+          <label>Codex CLI 路径
+            <div class="row"><input data-key="codexExe" placeholder="留空自动查找 codex" /><button type="button" id="pick-codex">选择</button></div>
+          </label>
+          <label>模型<input data-key="codexModel" placeholder="留空使用 Codex 默认模型" /></label>
+          <label>推理强度
+            <select data-key="codexEffort">
+              <option value="">跟随 Codex 默认</option>
+              <option value="low">低</option>
+              <option value="medium">中</option>
+              <option value="high">高</option>
+              <option value="xhigh">超高</option>
+            </select>
+          </label>
+          <p class="muted">使用 Codex 的登录状态；首次使用请先运行 <code>codex login</code>。</p>
+        </div>
+        <div data-backend="dsh" hidden>
+          <label>模型
+            <select id="model-select"></select>
+          </label>
+          <label>推理强度
+            <select data-key="reasoningEffort">
+              <option value="">跟随 DSH 默认（推荐）</option>
+              <option value="off">关闭（最快）</option>
+              <option value="low">低</option>
+              <option value="medium">中</option>
+              <option value="high">高</option>
+            </select>
+          </label>
+          <label>DeepSeek Harness.exe 路径
+            <div class="row"><input data-key="dshExe" placeholder="留空自动查找" /><button type="button" id="pick-exe">选择</button></div>
+          </label>
+          <label>DSH 网页版地址<input data-key="dshWebUrl" /></label>
+          <label>模型配置来源 profile<input data-key="sourceProfile" placeholder="desktop" /></label>
+        </div>
         <label>权限
           <select data-key="permission">
             <option value="read-only">只读：只能看，不能改文件/跑写操作</option>
@@ -151,29 +193,11 @@
             <option value="danger-full-access">完全访问：不受沙箱限制（谨慎）</option>
           </select>
         </label>
-        <label>模型
-          <select id="model-select"></select>
-        </label>
-        <label>推理强度
-          <select data-key="reasoningEffort">
-            <option value="">跟随 DSH 默认（推荐）</option>
-            <option value="off">关闭（最快）</option>
-            <option value="low">低</option>
-            <option value="medium">中</option>
-            <option value="high">高</option>
-          </select>
-        </label>
         <label>工作目录
           <div class="row"><input data-key="cwd" /><button type="button" id="pick-cwd">选择</button></div>
         </label>
-        <label>DeepSeek Harness.exe 路径（留空自动查找）
-          <div class="row"><input data-key="dshExe" placeholder="自动" /><button type="button" id="pick-exe">选择</button></div>
-        </label>
-        <p id="dsh-status" class="muted"></p>
-        <label>DSH 网页版地址<input data-key="dshWebUrl" /></label>
-        <label>模型配置来源 profile<input data-key="sourceProfile" placeholder="desktop" /></label>
-        <label class="check"><input data-key="loadAgentsMd" type="checkbox" />加载 AGENTS.md 指令（更像编程助手，但更费 token）</label>
-        <label class="check"><input data-key="loadSkills" type="checkbox" />加载技能目录（更费 token）</label>
+        <label class="check"><input data-key="loadAgentsMd" type="checkbox" />加载 AGENTS.md 指令</label>
+        <label class="check"><input data-key="loadSkills" type="checkbox" />加载技能目录</label>
 
         <h3>主动性</h3>
         <label class="check"><input data-key="proactive" type="checkbox" />主动模式（提醒、打招呼、捣蛋）</label>
@@ -185,7 +209,7 @@
             <option value="3">3 · 超皮（约 10 分钟一次）</option>
           </select>
         </label>
-        <label class="check"><input data-key="wander" type="checkbox" />空闲时在任务栏上散步</label>
+        <label class="check"><input data-key="wander" type="checkbox" />空闲时在屏幕底部散步</label>
         <label>提醒没回应时，隔几分钟再来提醒（最多 3 次，0 = 只提醒一次）<input data-key="nagMinutes" type="number" min="0" max="240" /></label>
         <label>喝水/休息提醒间隔（分钟，0 关闭）<input data-key="waterMinutes" type="number" min="0" max="600" /></label>
         <label>AI 主动搭话间隔（分钟，0 关闭；会消耗 token）<input data-key="llmRemarkMinutes" type="number" min="0" max="1440" /></label>
@@ -204,12 +228,15 @@
             <option value="hide">躲猫猫</option>
             <option value="dance">跳舞</option>
             <option value="pinNote">贴小纸条</option>
-            <option value="climb">爬到窗口上</option>
+            <option value="climb" data-requires="windows">爬到窗口上</option>
           </select>
           <button type="button" id="prank-run">现在捣个蛋</button>
         </div>
 
         <h3>自主与读屏</h3>
+        <p id="screen-capability-summary" class="muted" role="status" aria-live="polite">正在检测屏幕能力…</p>
+        <p id="screen-capability-reason" class="muted" hidden></p>
+        <div class="row"><button type="button" id="screen-refresh">重新检测</button></div>
         <label>自主程度
           <select data-key="autonomy">
             <option value="active">积极：常看看你在做什么，主动帮忙（每小时看屏 ≤12 次、开口 ≤8 次）</option>
@@ -217,7 +244,7 @@
             <option value="quiet">安静：不主动看屏幕，只提醒</option>
           </select>
         </label>
-        <label>看你的屏幕（把当前窗口截图交给模型看）
+        <label>看你的屏幕（截图会交给模型）
           <select data-rule="screen">
             <option value="auto">自动</option>
             <option value="ask">每次先问我</option>
@@ -233,16 +260,16 @@
         <label>这些窗口从不看（进程名或标题关键词，每行一个）
           <textarea data-list="screenBlock" rows="3"></textarea>
         </label>
-        <label class="check"><input data-key="quietInMeetings" type="checkbox" />开会时保持安静</label>
-        <label class="check"><input data-key="hideOnFullscreen" type="checkbox" />全屏看视频/玩游戏时躲起来</label>
+        <label class="check"><input data-key="quietInMeetings" data-requires="foreground" type="checkbox" />开会时保持安静</label>
+        <label class="check"><input data-key="hideOnFullscreen" data-requires="foreground" type="checkbox" />全屏看视频/玩游戏时躲起来</label>
         <label class="check"><input data-key="clipboardWatch" type="checkbox" />复制了报错、代码或英文时主动问要不要帮忙</label>
-        <label class="check"><input data-key="focusGuard" type="checkbox" />番茄钟专注时，看到你在摸鱼就提醒</label>
+        <label class="check"><input data-key="focusGuard" data-requires="foreground" type="checkbox" />番茄钟专注时，看到你在摸鱼就提醒</label>
         <label>摸鱼网站/应用（每行一个）
           <textarea data-list="distractions" rows="2"></textarea>
         </label>
-        <label class="check"><input data-key="climbWindows" type="checkbox" />偶尔爬到你的窗口上坐着</label>
+        <label class="check"><input data-key="climbWindows" data-requires="windows" type="checkbox" />偶尔爬到你的窗口上坐着</label>
         <label class="check"><input data-key="idleActions" type="checkbox" />空闲时做些小动作（看书、吃饼干、坐着晃腿…）</label>
-        <label>每天几点写今日小结（留空关闭；保存在「文档\Claude Ojousama 日报」）<input data-key="summaryTime" type="time" /></label>
+        <label>每天几点写今日小结（留空关闭；保存在文档目录的「Claude Ojousama 日报」）<input data-key="summaryTime" type="time" /></label>
         <label>她自己在后台做的事（整理记忆、每日简报、工作区巡检、每日小技巧）
           <select data-rule="agenda">
             <option value="auto">自动</option>
@@ -256,20 +283,34 @@
           <div class="row"><input data-key="weatherCity" placeholder="例如：Shanghai 或 上海" /><button type="button" id="weather-refresh">刷新</button></div>
         </label>
         <p id="weather-state" class="muted"></p>
-        <label>看屏和后台任务用的模型（看屏、整理记忆、简报、巡检、小技巧、小结；选快一点的模型她反应更快）
-          <select id="glance-model"></select>
-        </label>
-        <label>看屏和后台任务用的推理强度
-          <select data-key="glanceEffort">
-            <option value="">跟随 DSH 默认</option>
-            <option value="off">关闭（最快）</option>
-            <option value="low">低</option>
-            <option value="medium">中</option>
-            <option value="high">高</option>
-          </select>
-        </label>
+        <div data-backend="codex">
+          <label>看屏和后台任务的模型<input data-key="codexGlanceModel" placeholder="留空跟随聊天模型" /></label>
+          <label>看屏和后台任务的推理强度
+            <select data-key="codexGlanceEffort">
+              <option value="">跟随聊天设置</option>
+              <option value="low">低</option>
+              <option value="medium">中</option>
+              <option value="high">高</option>
+              <option value="xhigh">超高</option>
+            </select>
+          </label>
+        </div>
+        <div data-backend="dsh" hidden>
+          <label>看屏和后台任务的模型
+            <select id="glance-model"></select>
+          </label>
+          <label>看屏和后台任务的推理强度
+            <select data-key="glanceEffort">
+              <option value="">跟随 DSH 默认</option>
+              <option value="off">关闭（最快）</option>
+              <option value="low">低</option>
+              <option value="medium">中</option>
+              <option value="high">高</option>
+            </select>
+          </label>
+        </div>
         <div class="row">
-          <button type="button" id="look-now" class="primary">👀 看看我在干嘛</button>
+          <button type="button" id="look-now" class="primary" data-requires="manualCapture">👀 看看我在干嘛</button>
           <button type="button" id="screen-pause">1 小时内别看</button>
           <span id="screen-state" class="muted"></span>
         </div>

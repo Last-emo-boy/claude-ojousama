@@ -103,9 +103,14 @@ async function magic(pet) {
 
 const ALL = { peek, fakeBug, dragJunk, chase, knock, hide, dance, pinNote, magic }
 const LOCKED = { magic: 'magic' } // prank -> unlock id
+const POSITIONED = new Set(['peek', 'dragJunk', 'chase', 'hide'])
 
 async function runRandom(pet, name) {
-  const keys = Object.keys(ALL).filter((k) => !LOCKED[k] || (pet.hasUnlock && pet.hasUnlock(LOCKED[k])))
+  if (name && POSITIONED.has(name) && pet.canPositionWindows === false) {
+    await pet.say('当前桌面由系统管理窗口位置，不能追鼠标或移动桌宠；可以跳舞、敲屏幕和贴便签。', { ttl: 5000 })
+    return null
+  }
+  const keys = Object.keys(ALL).filter((k) => (pet.canPositionWindows !== false || !POSITIONED.has(k)) && (!LOCKED[k] || (pet.hasUnlock && pet.hasUnlock(LOCKED[k]))))
   const key = name && ALL[name] ? name : pick(keys)
   await ALL[key](pet)
   return key

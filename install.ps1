@@ -77,7 +77,7 @@ if (-not $NoDesktopShortcut) {
   $s.Arguments = "`"$appDir`""
   $s.WorkingDirectory = $rt
   $s.IconLocation = (Join-Path $appDir 'assets\icon.ico') + ',0'
-  $s.Description = 'Claude Ojousama · DeepSeek Harness 桌宠'
+  $s.Description = 'Claude Ojousama · AI 桌宠'
   $s.Save()
   Write-Host "桌面快捷方式：$lnk"
 }

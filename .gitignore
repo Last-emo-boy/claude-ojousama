@@ -1,5 +1,8 @@
 # dependencies / runtime
 node_modules/
+dist/
+src/main/platform/bin/
+__pycache__/
 
 # raw image-model output (~1.5 MB each); the processed sprites in assets/sprites are what the app uses
 assets/raw/

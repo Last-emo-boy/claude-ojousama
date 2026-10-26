@@ -7,15 +7,17 @@ class Motion {
    * @param {() => Electron.BrowserWindow | null} getWin
    * @param {(dir: 1 | -1) => void} onFace called when the walking direction changes
    */
-  constructor(getWin, onFace) {
+  constructor(getWin, onFace, { positionable = true } = {}) {
     this.getWin = getWin
     this.onFace = onFace
+    this.positionable = positionable
     this.timer = null
     this.cancelCurrent = null
   }
 
   /** Move without letting Windows DPI rounding grow the transparent window. */
   setPos(win, x, y) {
+    if (!this.positionable) return
     const s = this.size || win.getSize()
     win.setBounds({ x: Math.round(x), y: Math.round(y), width: s[0], height: s[1] })
   }
@@ -51,6 +53,7 @@ class Motion {
   }
 
   _animate(step) {
+    if (!this.positionable) return Promise.resolve(false)
     this.stop()
     return new Promise((resolve) => {
       let last = Date.now()

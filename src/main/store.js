@@ -5,8 +5,14 @@ const path = require('path')
 
 const DEFAULTS = {
   settings: {
+    backend: 'codex',
+    codexExe: '',
+    codexModel: '',
+    codexEffort: '',
+    codexGlanceModel: '',
+    codexGlanceEffort: '',
     scale: 1.5,
-    permission: 'workspace-write', // read-only | workspace-write | danger-full-access
+    permission: 'read-only', // read-only | workspace-write | danger-full-access
     provider: '', // empty -> inherit from the source DSH profile
     model: '',
     reasoningEffort: '', // empty -> inherit from the source DSH profile
@@ -16,7 +22,7 @@ const DEFAULTS = {
     dshWebUrl: 'http://127.0.0.1:31787',
     loadAgentsMd: false,
     loadSkills: false,
-    hotkey: 'Control+Alt+Q',
+    hotkey: 'CommandOrControl+Alt+Q',
     gravity: true,
     wander: true,
     proactive: true,
@@ -80,6 +86,11 @@ class Store {
     for (const [k, v] of Object.entries(DEFAULTS)) {
       if (Array.isArray(v)) this.data[k] = Array.isArray(data[k]) ? data[k] : []
       else this.data[k] = { ...v, ...(data[k] || {}) }
+    }
+    // Upgrading an existing installation must not switch its agent or model.
+    if (data.settings && !data.settings.backend) {
+      this.data.settings.backend = 'dsh'
+      if (!data.settings.permission) this.data.settings.permission = 'workspace-write'
     }
     // Nested defaults: keep rules added in newer versions.
     this.data.settings.rules = { ...DEFAULT_RULES, ...(this.data.settings.rules || {}) }

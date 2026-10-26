@@ -1,15 +1,19 @@
 {
   "name": "claude-ojousama",
-  "version": "2.0.0",
-  "description": "Claude Ojousama — a pixel-art desktop companion that sees your screen and helps on her own, powered by DeepSeek Harness",
+  "version": "2.1.0",
+  "description": "A cross-platform pixel-art desktop companion powered by Codex or DeepSeek Harness",
   "main": "src/main/main.js",
   "scripts": {
-    "start": "electron .",
-    "install-app": "powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1 -Launch",
-    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/dev-run.ps1",
-    "test": "node tests/senses.test.js && node tests/tidy.test.js && node tests/persona.test.js && node tests/growth.test.js && node tests/weather.test.js && node tests/agenda.test.js",
-    "check": "node -e \"for (const d of ['src/main','src/renderer']) for (const f of require('fs').readdirSync(d)) if (f.endsWith('.js')) require('child_process').execFileSync(process.execPath, ['--check', d + '/' + f], { stdio: 'inherit' })\"",
-    "sprites": "python tools/process_sprites.py"
+    "start": "node tools/dev-run.js --start",
+    "install-app": "node tools/install-app.js",
+    "dev": "node tools/dev-run.js",
+    "test": "node tests/senses.test.js && node tests/tidy.test.js && node tests/persona.test.js && node tests/growth.test.js && node tests/weather.test.js && node tests/agenda.test.js && node tests/agent.test.js && node tests/codex.test.js && node tests/platform-screen.test.js && node tests/packaging.test.js && node tests/main.test.js",
+    "check": "node -e \"for (const d of ['src/main','src/renderer']) for (const f of require('fs').readdirSync(d)) if (f.endsWith('.js')) require('child_process').execFileSync(process.execPath, ['--check', d + '/' + f], { stdio: 'inherit' })\" && node --check tools/dev-run.js && node --check tools/install-app.js && node --check tools/build-screen-helper.js",
+    "sprites": "python tools/process_sprites.py",
+    "dev:win": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/dev-run.ps1",
+    "build:helpers": "node tools/build-screen-helper.js",
+    "pack": "npm run build:helpers && electron-builder --dir --publish never",
+    "dist": "npm run build:helpers && electron-builder --publish never"
   },
   "keywords": [
     "desktop-pet",
@@ -17,17 +21,101 @@
     "pixel-art",
     "ai-agent",
     "deepseek-harness",
-    "windows"
+    "codex",
+    "windows",
+    "macos",
+    "linux"
   ],
   "author": "Silasvanceneo",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Silasvanceneo/claude-ojousama.git"
+    "url": "https://github.com/Last-emo-boy/claude-ojousama.git"
   },
-  "homepage": "https://github.com/Silasvanceneo/claude-ojousama#readme",
+  "homepage": "https://github.com/Last-emo-boy/claude-ojousama#readme",
   "type": "commonjs",
   "devDependencies": {
-    "electron": "^44.7.0"
+    "electron": "^44.7.0",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "com.claude-ojousama.app",
+    "productName": "Claude Ojousama",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "src/**/*",
+      "!src/**/__pycache__/**/*",
+      "assets/**/*",
+      "!assets/raw/**/*",
+      "!assets/reference/**/*",
+      "package.json"
+    ],
+    "asar": false,
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "assets/icon-512.png",
+      "identity": null,
+      "hardenedRuntime": false,
+      "extendInfo": {
+        "NSScreenCaptureUsageDescription": "查看你选择的屏幕内容，为你提供建议；可随时在设置中关闭。"
+      }
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "assets/icon.ico",
+      "signAndEditExecutable": false,
+      "executableName": "ClaudeOjousama"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "icon": "assets/icon-512.png",
+      "maintainer": "Last-emo-boy",
+      "desktop": {
+        "entry": {
+          "Name": "Claude Ojousama",
+          "Comment": "Pixel-art AI desktop companion",
+          "StartupWMClass": "claude-ojousama"
+        }
+      },
+      "executableName": "claude-ojousama"
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "python3",
+        "libx11-6"
+      ],
+      "recommends": [
+        "tesseract-ocr"
+      ]
+    }
   }
 }

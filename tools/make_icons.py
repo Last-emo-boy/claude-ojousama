@@ -15,7 +15,7 @@ cx = int((cols.min() + cols.max()) / 2)
 box = (cx - size // 2, top - 1, cx - size // 2 + size, top - 1 + size)
 head = frame.crop(box)
 head.save(os.path.join(root, "assets", "head.png"))
-for px, name in ((256, "icon-256.png"), (64, "icon.png"), (32, "tray.png")):
+for px, name in ((512, "icon-512.png"), (256, "icon-256.png"), (64, "icon.png"), (32, "tray.png")):
     head.resize((px, px), Image.NEAREST if px >= size else Image.BOX).save(os.path.join(root, "assets", name))
 head.resize((256, 256), Image.NEAREST).save(os.path.join(root, "assets", "icon.ico"), sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
 print("head", size, box)
