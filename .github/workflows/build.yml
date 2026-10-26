@@ -23,10 +23,10 @@ jobs:
             artifact: windows-x64-unsigned
           - name: macOS Apple Silicon
             os: macos-15
-            artifact: macos-arm64-unsigned
+            artifact: macos-arm64-unnotarized
           - name: macOS Intel
             os: macos-15-intel
-            artifact: macos-x64-unsigned
+            artifact: macos-x64-unnotarized
           - name: Linux x64
             os: ubuntu-24.04
             artifact: linux-x64

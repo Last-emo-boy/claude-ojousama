@@ -158,7 +158,7 @@ Windows 上也可选择 **DeepSeek Harness**，沿用其模型配置；找不到
 
 `npm run install-app` 安装到当前用户目录并启动：Windows 沿用原 PowerShell 安装器，macOS 使用 `~/Applications`，Linux 使用 `~/.local/share/claude-ojousama`。预编译的 macOS 安装包不需要编译工具。
 
-`npm run dist` 生成当前系统安装包：Windows NSIS / ZIP、macOS DMG / ZIP、Linux AppImage / deb。CI 在 Windows、macOS ARM / Intel 和 Linux 分别构建。安装包未签名，首次运行请按系统提示确认来源。
+`npm run dist` 生成当前系统安装包：Windows NSIS / ZIP、macOS DMG / ZIP、Linux AppImage / deb。CI 在 Windows、macOS ARM / Intel 和 Linux 分别构建。macOS 安装包使用 ad-hoc 签名，尚未经过 Apple 公证；Windows 安装包未签名。首次运行请按系统提示确认来源。
 
 ## 🕹️ 怎么和她相处
 
@@ -300,7 +300,7 @@ node tools/cdp.js "__pet.lookNow()"   # 在运行中的应用里执行调试命�
 - **Reminders that come back**, a sticky-note todo list she drags onto your desktop, long-running goals with scheduled check-ins, Downloads tidying with undo, a daily summary, weather, moods, pranks and 47 animations.
 - **Privacy controls**: a block list (password managers, banking, private windows and chat apps by default), a per-behaviour auto/ask/off rule, a one-hour pause, and temporary screenshots deleted right after use. Screen content is sent to the provider configured for the selected backend.
 
-Install a platform build from GitHub Actions, or use Node.js 18+ with `npm install` and `npm run install-app`. Install Codex CLI and run `codex login` first. Building the macOS helper from source requires Xcode Command Line Tools; prebuilt apps bundle it. DSH remains available on Windows. Packages are unsigned.
+Install a platform build from GitHub Actions, or use Node.js 18+ with `npm install` and `npm run install-app`. Install Codex CLI and run `codex login` first. Building the macOS helper from source requires Xcode Command Line Tools; prebuilt apps bundle it. DSH remains available on Windows. macOS packages use ad-hoc signing and are not notarized; Windows packages are unsigned.
 
 Fan project, not affiliated with Anthropic or DeepSeek. "Claude" is a trademark of Anthropic.
 

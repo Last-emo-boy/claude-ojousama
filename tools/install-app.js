@@ -8,6 +8,10 @@ const { spawn, spawnSync } = require('child_process')
 const ROOT = path.resolve(__dirname, '..')
 const APP_ID = 'com.claude-ojousama.app'
 
+function installTarget({ platform = process.platform, home = os.homedir() } = {}) {
+  return platform === 'darwin' ? path.join(home, 'Applications', 'Claude Ojousama.app') : path.join(home, '.local', 'share', 'claude-ojousama', 'app')
+}
+
 function run(exe, args, options = {}) {
   const result = spawnSync(exe, args, { cwd: ROOT, stdio: 'inherit', ...options })
   if (result.error) throw result.error
@@ -25,7 +29,8 @@ function replaceApp(source, target, validTarget) {
   const incoming = `${target}.installing-${process.pid}`
   const backup = `${target}.previous-${process.pid}`
   try {
-    fs.cpSync(source, incoming, { recursive: true, preserveTimestamps: true })
+    // macOS frameworks use relative links; resolving them ties the installed app to the build tree.
+    fs.cpSync(source, incoming, { recursive: true, preserveTimestamps: true, verbatimSymlinks: true })
     if (exists) fs.renameSync(target, backup)
     fs.renameSync(incoming, target)
   } catch (error) {
@@ -46,19 +51,17 @@ function main(args = process.argv.slice(2)) {
     return
   }
   if (!['darwin', 'linux'].includes(process.platform)) throw new Error(`Unsupported desktop platform: ${process.platform}`)
-  run(process.execPath, [path.join(__dirname, 'build-screen-helper.js')], { env })
-  run(process.execPath, [require.resolve('electron-builder/cli.js'), '--dir', '--publish', 'never'], { env: { ...env, CSC_IDENTITY_AUTO_DISCOVERY: 'false' } })
+  const { buildApp, packagePath } = require('./build-app')
+  const source = packagePath(buildApp({ dir: true }))
   let target, executable
   if (process.platform === 'darwin') {
-    const source = path.join(ROOT, 'dist', process.arch === 'arm64' ? 'mac-arm64' : 'mac', 'Claude Ojousama.app')
-    target = path.join(os.homedir(), 'Applications', 'Claude Ojousama.app')
+    target = installTarget()
     replaceApp(source, target, (dir) => {
       const plist = path.join(dir, 'Contents', 'Info.plist')
       return fs.existsSync(plist) && fs.readFileSync(plist, 'utf8').includes(`<string>${APP_ID}</string>`)
     })
   } else {
-    const source = path.join(ROOT, 'dist', process.arch === 'arm64' ? 'linux-arm64-unpacked' : 'linux-unpacked')
-    target = path.join(os.homedir(), '.local', 'share', 'claude-ojousama', 'app')
+    target = installTarget()
     replaceApp(source, target, (dir) => {
       const metadata = path.join(dir, 'resources', 'app', 'package.json')
       return fs.existsSync(metadata) && JSON.parse(fs.readFileSync(metadata, 'utf8')).name === 'claude-ojousama'
@@ -79,4 +82,4 @@ function main(args = process.argv.slice(2)) {
 if (require.main === module) {
   try { main() } catch (error) { console.error(error.message); process.exitCode = 1 }
 }
-module.exports = { desktopQuote, replaceApp, main }
+module.exports = { desktopQuote, replaceApp, installTarget, main }

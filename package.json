@@ -8,12 +8,12 @@
     "install-app": "node tools/install-app.js",
     "dev": "node tools/dev-run.js",
     "test": "node tests/senses.test.js && node tests/tidy.test.js && node tests/persona.test.js && node tests/growth.test.js && node tests/weather.test.js && node tests/agenda.test.js && node tests/agent.test.js && node tests/codex.test.js && node tests/platform-screen.test.js && node tests/packaging.test.js && node tests/main.test.js",
-    "check": "node -e \"for (const d of ['src/main','src/renderer']) for (const f of require('fs').readdirSync(d)) if (f.endsWith('.js')) require('child_process').execFileSync(process.execPath, ['--check', d + '/' + f], { stdio: 'inherit' })\" && node --check tools/dev-run.js && node --check tools/install-app.js && node --check tools/build-screen-helper.js",
+    "check": "node -e \"for (const d of ['src/main','src/renderer']) for (const f of require('fs').readdirSync(d)) if (f.endsWith('.js')) require('child_process').execFileSync(process.execPath, ['--check', d + '/' + f], { stdio: 'inherit' })\" && node --check tools/dev-run.js && node --check tools/install-app.js && node --check tools/build-screen-helper.js && node --check tools/build-app.js",
     "sprites": "python tools/process_sprites.py",
     "dev:win": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/dev-run.ps1",
     "build:helpers": "node tools/build-screen-helper.js",
-    "pack": "npm run build:helpers && electron-builder --dir --publish never",
-    "dist": "npm run build:helpers && electron-builder --publish never"
+    "pack": "node tools/build-app.js --dir",
+    "dist": "node tools/build-app.js"
   },
   "keywords": [
     "desktop-pet",
@@ -62,11 +62,14 @@
       ],
       "category": "public.app-category.productivity",
       "icon": "assets/icon-512.png",
-      "identity": null,
-      "hardenedRuntime": false,
+      "identity": "-",
+      "hardenedRuntime": true,
       "extendInfo": {
         "NSScreenCaptureUsageDescription": "查看你选择的屏幕内容，为你提供建议；可随时在设置中关闭。"
-      }
+      },
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "timestamp": "none"
     },
     "win": {
       "target": [

@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import CoreGraphics
+import Dispatch
 import Foundation
 import Vision
 
@@ -100,33 +101,84 @@ func respond(_ request: JSON) throws -> JSON {
     }
 }
 
+// AppKit refreshes NSRunningApplication state on main run-loop turns. Blocking
+// stdin on this actor would freeze foreground identity for the process lifetime.
+@MainActor
+final class LineInput {
+    private let input: FileHandle
+    private let source: any DispatchSourceRead
+    private var buffer = Data()
+    private let onLine: @MainActor (Data) -> Void
+    private let onEnd: @MainActor () -> Void
+
+    init(input: FileHandle, onLine: @escaping @MainActor (Data) -> Void,
+         onEnd: @escaping @MainActor () -> Void = { CFRunLoopStop(CFRunLoopGetMain()) }) {
+        self.input = input
+        self.onLine = onLine
+        self.onEnd = onEnd
+        source = DispatchSource.makeReadSource(fileDescriptor: input.fileDescriptor, queue: .main)
+        source.setEventHandler { [weak self] in
+            // The dispatch source is explicitly bound to DispatchQueue.main.
+            MainActor.assumeIsolated { self?.readAvailable() }
+        }
+    }
+
+    private func readAvailable() {
+        let data = input.availableData
+        if data.isEmpty {
+            if !buffer.isEmpty { onLine(buffer) }
+            buffer.removeAll()
+            source.cancel()
+            onEnd()
+            return
+        }
+        buffer.append(data)
+        while let newline = buffer.firstIndex(of: 10) {
+            let line = Data(buffer[..<newline])
+            buffer.removeSubrange(...newline)
+            onLine(line)
+        }
+    }
+
+    func run() {
+        source.resume()
+        CFRunLoopRun()
+        source.cancel()
+    }
+}
+
+@MainActor
+func processLine(_ line: Data) {
+    autoreleasepool {
+        var id: Any = NSNull()
+        let response: JSON
+        do {
+            guard let request = try JSONSerialization.jsonObject(with: line) as? JSON else {
+                throw NSError(domain: "ScreenHelper", code: 1, userInfo: [NSLocalizedDescriptionKey: "Expected a JSON object"])
+            }
+            id = request["id"] ?? NSNull()
+            response = try respond(request)
+        } catch {
+            response = ["ok": false, "error": error.localizedDescription]
+        }
+        var result = response
+        result["id"] = id
+        do {
+            let data = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
+            FileHandle.standardOutput.write(data)
+            FileHandle.standardOutput.write(Data([10]))
+        } catch {
+            FileHandle.standardError.write(Data("screen-helper: cannot encode response\n".utf8))
+        }
+    }
+}
+
+#if !SCREEN_HELPER_TESTS
 @main
 @MainActor
 struct ScreenHelper {
     static func main() {
-        while let line = readLine() {
-            autoreleasepool {
-                var id: Any = NSNull()
-                let response: JSON
-                do {
-                    guard let data = line.data(using: .utf8), let request = try JSONSerialization.jsonObject(with: data) as? JSON else {
-                        throw NSError(domain: "ScreenHelper", code: 1, userInfo: [NSLocalizedDescriptionKey: "Expected a JSON object"])
-                    }
-                    id = request["id"] ?? NSNull()
-                    response = try respond(request)
-                } catch {
-                    response = ["ok": false, "error": error.localizedDescription]
-                }
-                var result = response
-                result["id"] = id
-                do {
-                    let data = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])
-                    FileHandle.standardOutput.write(data)
-                    FileHandle.standardOutput.write(Data([10]))
-                } catch {
-                    FileHandle.standardError.write(Data("screen-helper: cannot encode response\n".utf8))
-                }
-            }
-        }
+        LineInput(input: .standardInput, onLine: processLine).run()
     }
 }
+#endif

@@ -2,6 +2,7 @@
 const assert = require('assert/strict')
 const fs = require('fs')
 const path = require('path')
+const os = require('os')
 const vm = require('vm')
 const { EventEmitter } = require('events')
 const { execFileSync } = require('child_process')
@@ -116,6 +117,18 @@ function load({ platform = 'linux', env = { DISPLAY: ':1' }, responses = {}, sou
   assert.equal(missing.helperCommand('win32').exe, 'powershell.exe')
   assert.equal(missing.helperCommand('linux').exe, 'python3')
   assert.equal(missing.initialCapabilities('linux', {}).session, 'headless')
+  if (process.platform === 'darwin') {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ojousama-helper-loop-'))
+    try {
+      const executable = path.join(directory, 'helper-loop-test')
+      execFileSync('xcrun', ['swiftc', '-parse-as-library', '-D', 'SCREEN_HELPER_TESTS',
+        path.join(path.dirname(file), 'platform', 'screen-helper-macos.swift'),
+        path.join(__dirname, 'macos-helper-loop.test.swift'), '-o', executable], { stdio: 'inherit' })
+      execFileSync(executable, [], { stdio: 'inherit', timeout: 5000 })
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true })
+    }
+  }
   if (process.platform === 'linux') {
     // Keep the same helper alive while dependencies and language packs change.
     execFileSync('python3', ['-c', `
