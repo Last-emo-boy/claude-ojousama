@@ -344,6 +344,10 @@ function render() {
   renderActivity()
   renderGrowth()
   $('#weather-state').textContent = snap.weather ? `现在：${snap.weather}` : snap.settings.weatherCity ? '还没拿到天气（检查城市名或网络）' : ''
+  const u = snap.update || {}
+  $('#update-state').textContent =
+    `当前版本 v${snap.version || '?'}` +
+    (u.available ? ` · 🎁 新版本 v${u.available} 可以下载` : u.checkedAt ? (u.error ? ` · 上次检查失败（${u.error}）` : ` · 已是最新（${fmt(u.checkedAt)} 检查）`) : '')
   renderSettings()
   $('#note-post').textContent = snap.noteOpen ? '📌 便签已贴出' : '📌 贴到桌面'
 }
@@ -425,6 +429,14 @@ $('#note-post').addEventListener('click', () => pet.invoke('note:post'))
 $('#act-clear').addEventListener('click', () => pet.invoke('activity:clear'))
 $('#reflect-now').addEventListener('click', () => pet.invoke('growth:reflect'))
 $('#weather-refresh').addEventListener('click', () => pet.invoke('weather:refresh'))
+$('#update-check').addEventListener('click', async (e) => {
+  e.target.disabled = true
+  try {
+    await pet.invoke('update:check')
+  } finally {
+    e.target.disabled = false
+  }
+})
 $('#mem-form').addEventListener('submit', async (e) => {
   e.preventDefault()
   const input = $('#mem-text')

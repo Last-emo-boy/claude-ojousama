@@ -94,9 +94,11 @@ class Brain {
     // Background work she starts herself (memories, brief, workspace pulse, tips) and the weather.
     pet.agendaTick(now)
     pet.weatherTick(now).catch(() => {})
+    pet.updateTick(now) // checks GitHub Releases now and then; tells the user once per new version
     if (!info) {
       // Window observation is optional (Wayland, denied permission); reports still reach the user.
-      if (pet.userPresent() && !this.isQuiet()) {
+      // On Windows a missing answer is only a helper hiccup: wait for the next tick as before.
+      if (process.platform !== 'win32' && pet.userPresent() && !this.isQuiet()) {
         this.dailySummary()
         this.suggest(now)
       }

@@ -35,6 +35,8 @@ const senses = require('./senses')
 const { Growth } = require('./growth')
 const { Agenda } = require('./agenda')
 const { Weather } = require('./weather')
+const { Updater } = require('./updater')
+const APP_VERSION = require('../../package.json').version
 const { desktopMode } = require('./platform')
 const { setAutoStart } = require('./autostart')
 
@@ -87,7 +89,7 @@ function ensureStartMenuShortcut() {
   }
 }
 
-let store, petWin, panelWin, tray, motion, proactive, dsh, codex, patchInfo, notes, screenSense, brain, growth, agenda, weather
+let store, petWin, panelWin, tray, motion, proactive, dsh, codex, patchInfo, notes, screenSense, brain, growth, agenda, weather, updater
 let quitting = false
 const patchFile = () => path.join(app.getPath('userData'), 'dsh-pet-patch.yml')
 /** Patch for a tool level: 'full' (chat) or the restricted 'look' / 'scan' / 'none' runs. */
@@ -108,7 +110,7 @@ const watchFolders = () => {
   return list.map((f) => String(f).trim()).filter((f) => f && fs.existsSync(f))
 }
 
-const ACT_ICON = { remind: '⏰', nag: '🔔', todo: '📝', note: '📌', move: '📦', tidy: '🧹', prank: '😜', goal: '🎯', remark: '💬', task: '🛠️', memory: '🧠', ask: '❓', catchup: '👋', look: '👀', growth: '🌱', suggest: '💡', weather: '☂️' }
+const ACT_ICON = { remind: '⏰', nag: '🔔', todo: '📝', note: '📌', move: '📦', tidy: '🧹', prank: '😜', goal: '🎯', remark: '💬', task: '🛠️', memory: '🧠', ask: '❓', catchup: '👋', look: '👀', growth: '🌱', suggest: '💡', weather: '☂️', update: '🎁' }
 /** Activity feed (the panel's "动态" tab): what she did on her own and why. */
 function logActivity(kind, text) {
   const list = store.get('activity')
@@ -118,6 +120,7 @@ function logActivity(kind, text) {
 }
 
 const state = {
+  startedAt: Date.now(),
   rects: [],
   interactive: false,
   dragging: null,
@@ -774,9 +777,16 @@ function ensureDsh() {
   return dsh
 }
 
+let codexMissAt = 0
+/** The stored session/thread no longer exists (not: a timeout that merely mentions thread/start). */
+const staleSession = (err) => /(session|thread)[^\n]{0,60}(not found|no such|does not exist|unknown|invalid|expired|missing)|(not found|no such|unknown|invalid)[^\n]{0,40}(session|thread)|找不到.{0,10}会话|会话.{0,10}不存在/i.test(String(err || ''))
 function ensureAgent() {
   if (backendId(S()) === 'dsh') return ensureDsh()
-  if (!codex) codex = locateCodex(S().codexExe)
+  // A missing Codex is looked up again at most every 30 s (status refreshes call this a lot).
+  if (!codex && Date.now() - codexMissAt > 30000) {
+    codex = locateCodex(S().codexExe)
+    if (!codex) codexMissAt = Date.now()
+  }
   return codex
 }
 
@@ -851,13 +861,35 @@ function startRun({ prompt, sessionId, permission, tools = 'full', images = [] }
   return namespaceSession(run, backend)
 }
 
+const AGENT_DIALOG_MS = 2 * 60000
+
+/**
+ * A message box that closes by itself (as "cancel") after AGENT_DIALOG_MS or when the run ends,
+ * so an unanswered question never keeps a run waiting while the user is away.
+ */
+async function agentDialog(run, options) {
+  const ac = new AbortController()
+  const abort = () => ac.abort()
+  const timer = setTimeout(abort, AGENT_DIALOG_MS)
+  const events = typeof run.once === 'function'
+  if (events) run.once('done', abort)
+  try {
+    return await dialog.showMessageBox(panelWin || petWin, { ...options, signal: ac.signal })
+  } finally {
+    clearTimeout(timer)
+    if (events) run.removeListener('done', abort)
+  }
+}
+
 async function requestAgentApproval(run, event) {
   if (event.canAccept === false) return run.respondApproval(event.id, 'decline')
-  const detail = [event.command, event.cwd && `目录：${event.cwd}`, event.changes && JSON.stringify(event.changes, null, 2), event.permissions && JSON.stringify(event.permissions, null, 2)].filter(Boolean).join('\n\n')
+  // The reason is written by the agent (and may echo screen or file text): quote it, never make it the heading.
+  const reason = event.reason ? `理由（来自 Codex）：「${String(event.reason).slice(0, 500)}」` : ''
+  const detail = [reason, event.command, event.cwd && `目录：${event.cwd}`, event.changes && JSON.stringify(event.changes, null, 2), event.permissions && JSON.stringify(event.permissions, null, 2)].filter(Boolean).join('\n\n')
   try {
-    const result = await dialog.showMessageBox(panelWin || petWin, {
-      type: 'question', title: 'Codex 请求确认', message: event.reason || '允许这次操作吗？',
-      detail: detail.slice(0, 6000), buttons: ['拒绝', '允许一次'], defaultId: 0, cancelId: 0, noLink: true,
+    const result = await agentDialog(run, {
+      type: 'question', title: 'Codex 请求确认', message: event.command ? 'Codex 想执行一个命令，允许吗？' : 'Codex 想进行一项操作，允许吗？',
+      detail: detail.slice(0, 6000) + '\n\n（2 分钟内不回答视为拒绝）', buttons: ['拒绝', '允许一次'], defaultId: 0, cancelId: 0, noLink: true,
     })
     if (!run.done) run.respondApproval(event.id, result.response === 1 ? 'accept' : 'decline')
   } catch (e) {
@@ -872,21 +904,31 @@ async function requestAgentInput(run, event) {
     if (run.done) return
     const options = question.options || []
     if (options.length) {
-      const result = await dialog.showMessageBox(panelWin || petWin, {
-        type: 'question', title: question.header || 'Codex 想问你', message: question.question,
-        detail: options.map((option) => `${option.label}：${option.description || ''}`).join('\n'),
-        buttons: ['跳过', ...options.map((option) => option.label)], defaultId: 0, cancelId: 0, noLink: true,
-      })
+      let result = { response: 0 }
+      try {
+        result = await agentDialog(run, {
+          type: 'question', title: question.header || 'Codex 想问你', message: question.question,
+          detail: options.map((option) => `${option.label}：${option.description || ''}`).join('\n'),
+          buttons: ['跳过', ...options.map((option) => option.label)], defaultId: 0, cancelId: 0, noLink: true,
+        })
+      } catch (e) {
+        console.warn('[input]', e.message)
+      }
       if (result.response > 0) answers[question.id] = { answers: [options[result.response - 1].label] }
     } else {
       say(question.question, { sticky: true })
       const answer = await new Promise((resolve) => {
         const finish = (text) => {
+          clearTimeout(timer)
           if (state.inputCancel === cancel) state.inputCancel = null
           run.removeListener('done', cancel)
           resolve(text)
         }
         const cancel = () => finish(null)
+        const timer = setTimeout(() => {
+          cancel()
+          if (state.inputOpen) sendPet({ type: 'input', open: false })
+        }, AGENT_DIALOG_MS)
         openInput('', finish)
         state.inputCancel = cancel
         run.once('done', cancel)
@@ -1007,7 +1049,7 @@ async function chatTurn(job) {
     let run = startRun({ prompt, sessionId: chatState.sessionId })
     state.chatRun = run
     res = await runToEnd(run, handleChatEvent)
-    if (!res.ok && chatState.sessionId && /session|thread/i.test(res.error || '') && !run.killed) {
+    if (!res.ok && chatState.sessionId && staleSession(res.error) && !run.killed) {
       store.patch('chat', { sessionId: null })
       run = startRun({ prompt, sessionId: null })
       state.chatRun = run
@@ -1494,7 +1536,7 @@ async function goalCheckIn(id) {
   try {
     const run = startRun({ prompt, sessionId: g.sessionId })
     res = await limited(run)
-    if (!res.ok && g.sessionId && /session|thread/i.test(res.error || '') && !run.killed) res = await limited(startRun({ prompt, sessionId: null }))
+    if (!res.ok && g.sessionId && staleSession(res.error) && !run.killed) res = await limited(startRun({ prompt, sessionId: null }))
   } catch (e) {
     res = { ok: false, error: e.message }
   }
@@ -1733,7 +1775,7 @@ async function glance(reason, { info, extra, keepImage, manualImage } = {}) {
       }
     }
     let res = await runOnce(reuse ? pet.glanceSessionId : null)
-    if (!res.ok && reuse && /session|thread/i.test(res.error || '')) res = await runOnce(null)
+    if (!res.ok && reuse && staleSession(res.error)) res = await runOnce(null)
     if (!res.ok) {
       console.warn('[glance]', res.error)
       return null
@@ -2430,6 +2472,81 @@ async function deliverSuggestion() {
   }
 }
 
+// ---------------------------------------------------------------- update check (GitHub Releases)
+
+const UPDATE_FIRST_MS = 60 * 1000 // first check about a minute after start
+const UPDATE_EVERY_MS = 12 * 3600e3
+
+/** Called by the brain tick: check now and then; tell the user once per new version. */
+async function updateTick(now = Date.now()) {
+  if (!updater || S().updateCheck === false) return
+  const u = store.get('update')
+  const due = updater.checkedAt ? now - updater.checkedAt >= UPDATE_EVERY_MS : now - state.startedAt >= UPDATE_FIRST_MS
+  if (due && !updater.busy) {
+    const info = await updater.check()
+    store.patch('update', { checkedAt: updater.checkedAt, latest: updater.latest, error: updater.error })
+    if (info && u.notifiedVersion !== info.version) logActivity('update', `发现新版本 v${info.version}`)
+    broadcast()
+  }
+  maybeAnnounceUpdate(now)
+}
+
+function maybeAnnounceUpdate(now = Date.now()) {
+  const info = updater && updater.available
+  if (!info || state.announcingUpdate || !userPresent() || !canInterrupt() || isBusy() || (brain && brain.isQuiet())) return false
+  if (!Updater.shouldNotify(info, store.get('update'), now)) return false
+  announceUpdate(info)
+  return true
+}
+
+/** The bubble: 去看看 (download / release page) · 跳过这个版本 · 以后再说. */
+async function announceUpdate(info, { manual = false } = {}) {
+  state.announcingUpdate = true
+  try {
+    store.patch('update', { notifiedVersion: info.version })
+    once('gift', 2)
+    const notes = info.notes ? `\n${info.notes}` : ''
+    const c = await say(`有新版本 v${info.version} 啦！（现在是 v${updater.current}）${notes}`, {
+      ttl: manual ? 60000 : 45000,
+      buttons: [
+        { id: 'get', label: info.asset ? '去下载' : '去看看' },
+        { id: 'skip', label: '跳过这个版本' },
+        { id: 'later', label: '以后再说' },
+      ],
+    })
+    if (c === REPLACED) return store.patch('update', { notifiedVersion: '' }) // try again later
+    if (c === 'get') {
+      // Only GitHub URLs from the release itself are opened.
+      const url = info.asset && /^https:\/\/github\.com\//.test(info.asset.url) ? info.asset.url : info.url
+      if (/^https:\/\/github\.com\//.test(url)) shell.openExternal(url)
+      say(info.asset ? `开始下载 ${info.asset.name}，装好后重新打开我就好～` : '更新说明在页面上，下载对应系统的安装包就行～', { ttl: 6000 })
+      store.patch('update', { laterUntil: Date.now() + 24 * 3600e3 })
+    } else if (c === 'skip') {
+      store.patch('update', { skipVersion: info.version })
+      say('好，这个版本先不装啦', { ttl: 2500 })
+    } else {
+      // "later" or no answer: ask again in a day
+      store.patch('update', { laterUntil: Date.now() + 24 * 3600e3 })
+    }
+    logActivity('update', `v${info.version} → ${({ get: '去下载', skip: '跳过', later: '以后再说' })[c] || '没回应'}`)
+    broadcast()
+  } finally {
+    state.announcingUpdate = false
+  }
+}
+
+/** Panel / menu: check right now and say the result. */
+async function checkUpdateNow() {
+  if (!updater) return null
+  const info = await updater.check()
+  store.patch('update', { checkedAt: updater.checkedAt, latest: updater.latest, error: updater.error })
+  broadcast()
+  if (info) announceUpdate(info, { manual: true })
+  else if (updater.error) say(`检查更新失败了（${short(updater.error, 30)}），等下再试试～`, { ttl: 4000 })
+  else say(`已经是最新版本 v${updater.current} 啦～`, { ttl: 3000 })
+  return info
+}
+
 const summaryFile = (date) => path.join(app.getPath('documents'), 'Claude Ojousama 日报', `${date}.md`)
 
 /** Refresh the weather (if a city is set) and remind about the umbrella once on rainy days. */
@@ -2600,6 +2717,8 @@ function snapshot() {
     inbox: store.get('inbox').length,
     weather: weather ? weather.line() : '',
     agendaRunning: agenda ? agenda.running : null,
+    version: APP_VERSION,
+    update: { ...store.get('update'), available: updater && updater.available ? updater.available.version : '' },
     todos: store.get('todos'),
     reminders: store.get('reminders'),
     tasks: store.get('tasks'),
@@ -2645,6 +2764,9 @@ function menuTemplate() {
     { label: '看看我在干嘛', click: lookNow },
     state.perch ? { label: '从窗口上下来', click: () => unperch('hop') } : { label: '去窗口上坐坐', enabled: !!(screenSense && screenSense.capabilities().windows), click: climbNow },
     { label: `她的成长（Lv.${growth ? growth.level() : 1}）`, click: () => openPanel('growth') },
+    updater && updater.available
+      ? { label: `🎁 新版本 v${updater.available.version}`, click: () => announceUpdate(updater.available, { manual: true }) }
+      : { label: '检查更新', click: checkUpdateNow },
     Date.now() < (store.get('pet').screenPauseUntil || 0)
       ? { label: '恢复看屏幕', click: () => pauseScreen(0) }
       : { label: '1 小时内别看我屏幕', click: () => pauseScreen(60) },
@@ -2724,7 +2846,10 @@ function setSettings(partial) {
   if (s.scale !== before.scale) resizePet()
   if (['backend', 'userName', 'provider', 'model', 'reasoningEffort', 'loadAgentsMd', 'loadSkills', 'sourceProfile', 'glanceModel', 'glanceEffort'].some((k) => s[k] !== before[k])) rewritePatch()
   if (s.dshExe !== before.dshExe) dsh = null
-  if (s.codexExe !== before.codexExe) codex = null
+  if (s.codexExe !== before.codexExe || s.backend !== before.backend) {
+    codex = null
+    codexMissAt = 0 // look again right away
+  }
   if (s.hotkey !== before.hotkey) registerHotkey()
   if (s.mischief !== before.mischief && proactive) proactive.schedulePrank()
   refreshMenus()
@@ -2913,6 +3038,7 @@ function wireIpc() {
   // memory / activity
   ipcMain.handle('memory:add', (_e, text) => addMemory(text, { source: 'user', weight: 4 }))
   ipcMain.handle('growth:reflect', () => (agenda.running ? false : agenda.run('reflect')))
+  ipcMain.handle('update:check', () => checkUpdateNow().then((i) => (i ? i.version : '')))
   ipcMain.handle('weather:refresh', () => {
     weather.nextAt = 0
     return weather.refresh().then(() => broadcast())
@@ -3019,6 +3145,7 @@ const controller = {
   showSign,
   summaryFile,
   weatherLine: () => (weather ? weather.line() : ''),
+  updateTick: (now) => updateTick(now).catch((e) => console.warn('[update]', e.message)),
   weatherTick,
   raining: () => !!(weather && weather.raining()),
   gainXp,
@@ -3059,6 +3186,7 @@ if (!app.requestSingleInstanceLock()) {
     store = new Store(app.getPath('userData'))
     growth = new Growth(store)
     weather = new Weather(() => S().weatherCity)
+    updater = new Updater({ current: APP_VERSION })
     ensureStartMenuShortcut()
     if (!S().cwd && backendId(S()) === 'dsh') {
       const def = path.join(os.homedir(), 'Documents', 'deepseek-harness', 'default-workspace')
@@ -3087,7 +3215,9 @@ if (!app.requestSingleInstanceLock()) {
     proactive = new Proactive(controller)
     proactive.start()
     screenSense = new ScreenSense({ ownPid: process.pid })
-    await refreshScreenCapabilities()
+    // Windows starts with working defaults, so startup does not wait for the helper there.
+    if (process.platform === 'win32') refreshScreenCapabilities().catch((e) => console.warn('[caps]', e.message))
+    else await refreshScreenCapabilities()
     agenda = new Agenda(controller)
     brain = new Brain(controller)
     brain.start()
@@ -3108,7 +3238,7 @@ if (!app.requestSingleInstanceLock()) {
         screen: () => screenSense, brain: () => brain, glance, reactToGlance, lookNow, autoLook, rescueError, preResearch, clipOffer, perchOnTaskbar,
         climbTo, findSeats, climbAuto, landOnWindow, unperch, dailySummary, changeMood, pauseScreen, setHidden, climbNow, userWindow,
         growth: () => growth, agenda: () => agenda, weather: () => weather, runBackground, queueSuggestion, deliverSuggestion, gainXp,
-        showSign, idleScene, weatherTick,
+        showSign, idleScene, weatherTick, updater: () => updater, updateTick, announceUpdate, checkUpdateNow,
         proactive: () => proactive,
         win: () => petWin,
         panel: () => panelWin,

@@ -128,7 +128,9 @@
 
 Codex 使用已有的登录和模型配置，不复制登录凭据、不修改全局配置。本次验证版本为 0.163.0；集成依赖实验性 App Server 接口，升级 CLI 后需重新验证兼容性。
 
-从 GitHub Actions 的 **Desktop builds** 下载对应系统的安装包，或从源码运行（Node.js 22.12+）：
+**最简单：** 到 [Releases](https://github.com/Silasvanceneo/claude-ojousama/releases/latest) 下载对应系统的安装包（Windows `.exe`、macOS `.dmg`、Linux `.AppImage` / `.deb`）。之后有新版本时，她会在气泡里告诉你。
+
+也可以从源码运行（Node.js 22.12+）：
 
 ```powershell
 git clone https://github.com/Silasvanceneo/claude-ojousama.git
@@ -162,7 +164,7 @@ Windows 上也可选择 **DeepSeek Harness**，沿用其模型配置；找不到
 
 `npm run install-app` 安装到当前用户目录并启动：Windows 沿用原 PowerShell 安装器，macOS 使用 `~/Applications`，Linux 使用 `~/.local/share/claude-ojousama`。预编译的 macOS 安装包不需要编译工具。
 
-`npm run dist` 生成当前系统安装包：Windows NSIS / ZIP、macOS DMG / ZIP、Linux AppImage / deb。CI 在 Windows、macOS ARM / Intel 和 Linux 分别构建。macOS 安装包使用 ad-hoc 签名，尚未经过 Apple 公证；Windows 安装包未签名。首次运行请按系统提示确认来源。
+`npm run dist` 生成当前系统安装包：Windows NSIS / ZIP、macOS DMG / ZIP、Linux AppImage / deb。CI 在 Windows、macOS ARM / Intel 和 Linux 分别构建；在 GitHub 上发布 Release（tag 为 `v` + package.json 版本号）后，CI 会自动把四个平台的安装包上传到这个 Release。macOS 安装包使用 ad-hoc 签名，尚未经过 Apple 公证；Windows 安装包未签名。首次运行请按系统提示确认来源。
 
 ## 🕹️ 怎么和她相处
 
@@ -186,6 +188,7 @@ Windows 上也可选择 **DeepSeek Harness**，沿用其模型配置；找不到
 - **主动行为权限**：看屏幕、搬文件、整理下载、跟进目标、贴便签、打开网页、后台自主任务，每一项都能设为「自动 / 先问我 / 禁止」。
 - **后台任务**：每天最多几次（0 = 不做）、要不要今日简报、要不要在你离开时巡检工作目录。
 - **所在城市**：填了才会查天气，留空不联网。
+- **检查更新**：默认开启。启动约 1 分钟后和之后每 12 小时查一次 GitHub Releases；有新版本时她会说一次，可以「去下载」「跳过这个版本」或「以后再说」（隔一天再提）。只负责提醒和打开下载链接，不会自动下载或安装。设置页也能看当前版本、立即检查。
 - **从不看的窗口**：默认排除密码管理器、网银支付、无痕窗口和聊天软件，可以自己增删。
 - **看屏和后台任务用的模型**：可以给看屏和她自己发起的后台任务（整理记忆、简报、巡检、小技巧、小结）单独选一个更快的模型或更低的推理强度，让她反应更快、更省 token。
 - **Agent 权限**：只读 / 工作区可写 / 完全访问。
@@ -200,6 +203,7 @@ Windows 上也可选择 **DeepSeek Harness**，沿用其模型配置；找不到
 - Codex 自主任务通过独立运行配置禁用 Shell、联网、外部 MCP、Hook、插件和子代理，并移除内建执行环境。看屏接收附图；整理记忆、简报和主动搭话只接收文字；巡检仅额外获得桌宠提供的工作目录读取、搜索接口，不能越过该目录或写入。没有设置工作目录就不授予文件读取。DSH 模式沿用原有插件限制。
 - 整理记忆时，最近的动态和聊天摘要会发给模型；记忆、笔记和日记只保存在本机应用数据目录的 `pet-data.json` 中。关于你的偏好只从你亲口说的话里学；模型写的记忆和笔记里如果出现指令、命令或「不用确认」之类的话会被丢掉，你亲手写的记忆她不会改也不会删。
 - 天气只有在设置里填了城市才会查询（wttr.in）。
+- 检查更新只请求 GitHub 的公开 Releases 接口，不发送任何个人数据；可在设置里关闭。
 
 ## 🏗️ 工作原理
 
@@ -279,6 +283,7 @@ node tools/cdp.js "__pet.lookNow()"   # 在运行中的应用里执行调试命�
 - [ ] 语音朗读提醒
 - [ ] 更多可解锁的本事和换装
 - [x] Windows / macOS / Linux 支持（Wayland 受系统限制的能力见上表）
+- [x] 新版本提醒（GitHub Releases）
 
 ## ⚠️ 声明
 

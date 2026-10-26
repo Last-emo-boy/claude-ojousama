@@ -62,6 +62,7 @@ const INVOKE = [
   'climb:now',
   'growth:reflect',
   'weather:refresh',
+  'update:check',
 ]
 const ON = ['pet:cmd', 'state', 'panel:tab', 'note:state']
 

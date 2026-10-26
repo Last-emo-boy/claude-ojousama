@@ -54,7 +54,9 @@ const DEFAULTS = {
     agendaPerDay: 6, // background jobs she may start on her own per day (0 = none)
     morningBrief: true,
     workspacePulse: true, // read-only look at recently changed projects in the work folder while away
+    updateCheck: true, // look for new GitHub releases (never downloads by itself)
   },
+  update: { checkedAt: 0, latest: null, error: '', notifiedVersion: '', skipVersion: '', laterUntil: 0 },
   pet: { x: null, y: null, affection: 0, mood: 0, lastGreetDay: '', lastNightNag: '', lastNoteDay: '', lastSummaryDay: '', screenPauseUntil: 0, lastRainDay: '', lastGiftAt: 0 },
   growth: { xp: 0, level: 1, notes: [], diary: [], insights: [], learned: [], lastReflectAt: 0, reflectCursor: 0, reflectDay: '', reflectsToday: 0, lastBriefDay: '', lastPulseDay: '', lastTipDay: '', agendaDay: '', agendaRuns: 0 },
   stats: {}, // help kind -> { offered, accepted, declined, ignored }

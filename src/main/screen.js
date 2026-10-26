@@ -61,11 +61,15 @@ class ScreenSense {
   }
 
   async refreshCapabilities() {
-    const result = await this.request('capabilities', {}, 10000)
+    // soft: a slow answer (cold PowerShell / WinRT) must not restart the helper
+    const result = await this.request('capabilities', {}, 10000, { soft: true })
     if (result.ok) {
       const { ok, id, ...value } = result
       this._capabilities = { ...this._capabilities, ...value, helperAvailable: true, reason: value.reason || '' }
       if (this._capabilities.session === 'wayland') this._capabilities.reason = 'Wayland 不提供全局窗口信息，请使用手动选屏；桌宠移动需要 XWayland'
+    } else if (process.platform === 'win32') {
+      // Windows always has window info; a slow cold start (WinRT OCR loading) must not switch it off.
+      this._capabilities = { ...this._capabilities, helperAvailable: false, reason: result.error }
     } else {
       this._capabilities = { ...this._capabilities, foreground: false, windows: false, ocr: false, helperAvailable: false, reason: result.error }
     }

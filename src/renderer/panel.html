@@ -283,6 +283,8 @@
           <div class="row"><input data-key="weatherCity" placeholder="例如：Shanghai 或 上海" /><button type="button" id="weather-refresh">刷新</button></div>
         </label>
         <p id="weather-state" class="muted"></p>
+        <label class="check"><input data-key="updateCheck" type="checkbox" />有新版本时告诉我（只查 GitHub Releases，不会自动下载）</label>
+        <div class="row"><span id="update-state" class="muted grow"></span><button type="button" id="update-check">检查更新</button></div>
         <div data-backend="codex">
           <label>看屏和后台任务的模型<input data-key="codexGlanceModel" placeholder="留空跟随聊天模型" /></label>
           <label>看屏和后台任务的推理强度

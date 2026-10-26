@@ -54,7 +54,7 @@ const context = {
   process: { platform: process.platform, env: {}, on() {} },
   __dirname: path.dirname(file),
   console: { log() {}, warn() {}, error() {} },
-  setTimeout, clearTimeout, setInterval, clearInterval,
+  setTimeout, clearTimeout, setInterval, clearInterval, AbortController,
 }
 vm.createContext(context)
 vm.runInContext(source + `
@@ -113,6 +113,8 @@ main.initialize(data, sense)
   await main.requestAgentApproval(approvalRun, {id:1,canAccept:true,command:'echo test',permissions:{network:{enabled:true}}})
   assert.deepEqual(responses, [[1,'decline']])
   assert.match(dialogs.at(-1).detail, /network/)
+  assert.ok(dialogs.at(-1).signal, 'approval dialogs close by themselves (timeout / run end)')
+  assert.doesNotMatch(dialogs.at(-1).message, /echo test/) // agent text is detail, never the heading
   await main.requestAgentApproval(approvalRun, {id:2,canAccept:false})
   assert.deepEqual(responses.at(-1), [2,'decline'])
   const answers = []

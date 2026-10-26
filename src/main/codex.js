@@ -6,6 +6,9 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 
+/** Item types a restricted (look / scan / none) run must never start. */
+const RESTRICTED_FORBIDDEN = new Set(['commandExecution', 'fileChange', 'mcpToolCall', 'webSearch'])
+
 function locateCodex(override) {
   const candidates = override ? [override] : (process.env.PATH || '').split(path.delimiter).filter(Boolean).flatMap((dir) =>
     process.platform === 'win32' ? [path.join(dir, 'codex.exe'), path.join(dir, 'codex.cmd')] : [path.join(dir, 'codex')])
@@ -264,6 +267,15 @@ class CodexRun extends EventEmitter {
     const names = { commandExecution: 'shell', fileChange: 'edit_file', mcpToolCall: item.tool, dynamicToolCall: item.tool, webSearch: 'web_search' }
     const tool = names[item.type]
     if (!tool) return
+    // Backstop for restricted runs: if Codex ever starts a shell, edit, MCP or web item anyway
+    // (a renamed feature flag, a weak sandbox), stop the whole run instead of letting it continue.
+    if (this.restricted && !completed && RESTRICTED_FORBIDDEN.has(item.type)) {
+      this.emit('event', { type: 'tool_call', tool, blocked: true })
+      this.blockedItem = item.type
+      this.kill()
+      this._finish(false, `受限任务里出现了不允许的操作（${item.type}），已停止`, 1)
+      return
+    }
     if (completed) this.emit('event', { type: 'tool_result', tool, status: item.status || 'completed' })
     else this.emit('event', { type: 'tool_call', tool, input: item.arguments || { command: item.command, query: item.query, path: item.changes?.[0]?.path } })
   }

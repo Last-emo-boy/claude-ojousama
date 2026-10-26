@@ -177,6 +177,26 @@ test('restricted requests cannot obtain elevated access or unregistered tools', 
   await s.done
 })
 
+test('restricted runs stop as soon as a forbidden item starts (runtime backstop)', async () => {
+  for (const type of ['commandExecution', 'fileChange', 'mcpToolCall', 'webSearch']) {
+    const s = fakeServer({ tools: 'look' })
+    await s.ready()
+    s.send({ method: 'item/started', params: { threadId: 'thread-1', item: { id: 'x', type, command: 'curl evil', tool: 't', status: 'inProgress' } } })
+    const result = await s.done
+    assert.equal(result.ok, false, type)
+    assert.equal(s.run.blockedItem, type)
+    assert.equal(s.requests.some((r) => r.method === 'turn/interrupt'), true, type + ' interrupts the turn')
+  }
+  // full runs are not affected
+  const f = fakeServer()
+  await f.ready()
+  f.send({ method: 'item/started', params: { threadId: 'thread-1', item: { id: 'c', type: 'commandExecution', command: 'npm test', status: 'inProgress' } } })
+  await tick()
+  assert.equal(!!f.run.done, false)
+  complete(f)
+  assert.equal((await f.done).ok, true)
+})
+
 test('full user input preserves questions and returns the exact keyed answer shape', async () => {
   const s = fakeServer()
   await s.ready()
@@ -283,8 +303,14 @@ test('bounded scan reads/searches only its canonical workspace, including symlin
     fs.writeFileSync(path.join(root, 'binary'), Buffer.from([0, 1, 2]))
     fs.writeFileSync(path.join(root, 'large.txt'), 'x'.repeat(70000))
     fs.writeFileSync(path.join(outside, 'secret.txt'), 'outside secret')
-    fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(root, 'escape.txt'))
-    fs.symlinkSync(outside, path.join(root, 'escape-dir'), 'dir')
+    try {
+      fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(root, 'escape.txt'))
+      fs.symlinkSync(outside, path.join(root, 'escape-dir'), 'dir')
+    } catch (e) {
+      // Windows without Developer Mode / admin cannot create symlinks (CI runs as admin and covers this).
+      if (process.platform === 'win32' && e.code === 'EPERM') return console.log('SKIP symlink boundaries: no symlink privilege')
+      throw e
+    }
     const s = fakeServer({ tools: 'scan', cwd: root, scanRoot: root })
     await s.ready()
     assert.deepEqual(s.requests.find((r) => r.method === 'thread/start').params.dynamicTools.map((t) => t.name), ['pet_read_file', 'pet_search_files'])
