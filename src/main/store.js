@@ -5,14 +5,14 @@ const path = require('path')
 
 const DEFAULTS = {
   settings: {
-    backend: 'codex',
+    backend: process.platform === 'win32' ? 'dsh' : 'codex',
     codexExe: '',
     codexModel: '',
     codexEffort: '',
     codexGlanceModel: '',
     codexGlanceEffort: '',
     scale: 1.5,
-    permission: 'read-only', // read-only | workspace-write | danger-full-access
+    permission: process.platform === 'win32' ? 'workspace-write' : 'read-only', // preserve the original Windows first-run policy
     provider: '', // empty -> inherit from the source DSH profile
     model: '',
     reasoningEffort: '', // empty -> inherit from the source DSH profile

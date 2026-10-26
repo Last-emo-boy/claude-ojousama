@@ -30,9 +30,9 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Last-emo-boy/claude-ojousama.git"
+    "url": "https://github.com/Silasvanceneo/claude-ojousama.git"
   },
-  "homepage": "https://github.com/Last-emo-boy/claude-ojousama#readme",
+  "homepage": "https://github.com/Silasvanceneo/claude-ojousama#readme",
   "type": "commonjs",
   "devDependencies": {
     "electron": "^44.7.0",
@@ -92,7 +92,7 @@
       ],
       "category": "Utility",
       "icon": "assets/icon-512.png",
-      "maintainer": "Last-emo-boy",
+      "maintainer": "Silasvanceneo",
       "desktop": {
         "entry": {
           "Name": "Claude Ojousama",

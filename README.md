@@ -95,7 +95,7 @@
 <details>
 <summary><b>后台自主任务</b></summary>
 
-她会在合适的时候自己开 DeepSeek Harness 后台任务（每天有次数上限，开会时不做，可在设置里关闭）：
+她会在合适的时候用当前选择的后端开后台任务（每天有次数上限，开会时不做，可在设置里关闭）：
 
 - **今日简报**：早上第一次碰电脑时，结合昨天的小结、待办、目标和天气，给你 3~5 条今天的要点。
 - **工作区巡检**：你离开时，只读地看一眼工作目录里最近改过的项目（git 状态、TODO、明显的问题），回来时告诉你，比如「有 19 个文件改了还没提交」。
@@ -122,12 +122,16 @@
 
 **平台：** Windows 10/11、macOS（Apple Silicon / Intel）、Linux 桌面。Codex 后端跨平台；原有 DSH 后端保留 Windows 兼容。
 
-**先准备 Codex：** 安装 [Codex CLI](https://learn.chatgpt.com/docs/cli)，运行 `codex login`。本次验证版本为 0.163.0。桌宠使用正常的 Codex 登录和模型配置，不复制登录凭据、不修改全局配置。
+**选择后端：**
+- **Windows 默认使用 DeepSeek Harness**：先安装并配置好 [DSH 桌面版](https://github.com/deepseek-ai/deepseek-harness)，也可以在设置中切换为 Codex。
+- **macOS/Linux 默认使用 Codex**：安装 [Codex CLI](https://learn.chatgpt.com/docs/cli)，运行 `codex login`。
 
-从 GitHub Actions 的 **Desktop builds** 下载对应系统的安装包，或从源码运行（Node.js 18+）：
+Codex 使用已有的登录和模型配置，不复制登录凭据、不修改全局配置。本次验证版本为 0.163.0；集成依赖实验性 App Server 接口，升级 CLI 后需重新验证兼容性。
+
+从 GitHub Actions 的 **Desktop builds** 下载对应系统的安装包，或从源码运行（Node.js 22.12+）：
 
 ```powershell
-git clone https://github.com/Last-emo-boy/claude-ojousama.git
+git clone https://github.com/Silasvanceneo/claude-ojousama.git
 cd claude-ojousama
 npm install            # 国内网络可先设置 $env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
 npm start              # 启动；macOS 源码开发需要 Xcode Command Line Tools 构建原生助手
@@ -137,7 +141,7 @@ Windows 也可以直接双击 `start-pet.cmd`。安装后桌面会出现「Claud
 
 > 开发时 `npm start` 即可直接运行。如果项目放在 DeepSeek Harness 的工作区里，请用 `npm run install-app` 或 `npm run dev`：工作区目录带有低完整性标签，Electron 无法在那里启动。
 
-在「设置 → AI 内核」选择 **Codex**。CLI 路径、模型和推理强度留空即可使用默认配置；需要改文件时，先选择工作目录，再把权限切换为「工作区可写」。新安装默认 Codex + 只读；升级旧数据仍使用原来的 DSH，模型、对话和待办不变。
+在「设置 → AI 内核」选择 **Codex**。CLI 路径、模型和推理强度留空即可使用默认配置；需要改文件时，先选择工作目录，再把权限切换为「工作区可写」。Windows 新安装保留原来的 DSH + 工作区可写默认值；macOS/Linux 新安装默认 Codex + 只读。升级旧数据仍使用原来的 DSH，模型、对话和待办不变。
 
 Windows 上也可选择 **DeepSeek Harness**，沿用其模型配置；找不到时选择 `DeepSeek Harness.exe`。切换后端不会把另一个后端的会话 ID 传过去。
 
@@ -289,7 +293,7 @@ node tools/cdp.js "__pet.lookNow()"   # 在运行中的应用里执行调试命�
 <details>
 <summary><b>English</b></summary>
 
-**Claude Ojousama** is a pixel-art desktop companion for Windows, macOS and Linux: an orange-haired programmer girl with a sunflower hair clip and a tiny CRT computer, living on your taskbar. This fork adds a Codex App Server backend while retaining the original Windows DeepSeek Harness backend. New installations default to Codex in read-only mode; existing settings keep DSH. Native macOS helpers are bundled in distributables; Linux X11 uses Python 3/libX11 with optional Tesseract. Wayland uses user-selected screen sharing and does not expose global window observation. See the platform table above for limits and required permissions.
+**Claude Ojousama** is a pixel-art desktop companion for Windows, macOS and Linux: an orange-haired programmer girl with a sunflower hair clip and a tiny CRT computer, living on your taskbar. A Codex App Server backend is available alongside the original Windows DeepSeek Harness backend. New Windows installations retain the DSH/workspace-write defaults; macOS and Linux default to Codex/read-only. Existing settings keep their original backend and permissions. Native macOS helpers are bundled in distributables; Linux X11 uses Python 3/libX11 with optional Tesseract. Wayland uses user-selected screen sharing and does not expose global window observation. See the platform table above for limits and required permissions.
 
 - **Sees your screen**: she captures the window you are using (long edge ≤ 1280 px) plus local OCR text when available and lets the model read it. She points out bugs, comments on what you are doing, and turns deadlines into todos.
 - **Acts on her own**: she reacts when you switch windows, every now and then, on errors, copied text, long sessions, and when you come back. She backs off when ignored, waits for typing pauses, stays quiet in meetings and hides during fullscreen apps.
@@ -300,7 +304,7 @@ node tools/cdp.js "__pet.lookNow()"   # 在运行中的应用里执行调试命�
 - **Reminders that come back**, a sticky-note todo list she drags onto your desktop, long-running goals with scheduled check-ins, Downloads tidying with undo, a daily summary, weather, moods, pranks and 47 animations.
 - **Privacy controls**: a block list (password managers, banking, private windows and chat apps by default), a per-behaviour auto/ask/off rule, a one-hour pause, and temporary screenshots deleted right after use. Screen content is sent to the provider configured for the selected backend.
 
-Install a platform build from GitHub Actions, or use Node.js 18+ with `npm install` and `npm run install-app`. Install Codex CLI and run `codex login` first. Building the macOS helper from source requires Xcode Command Line Tools; prebuilt apps bundle it. DSH remains available on Windows. macOS packages use ad-hoc signing and are not notarized; Windows packages are unsigned.
+Install a platform build from GitHub Actions, or use Node.js 22.12+ with `npm install` and `npm run install-app`. On Windows, configure DeepSeek Harness or select Codex; on macOS/Linux, install Codex CLI and run `codex login`. The tested Codex CLI version is 0.163.0, and this integration uses experimental App Server APIs. Building the macOS helper from source requires Xcode Command Line Tools; prebuilt apps bundle it. DSH remains available on Windows. macOS packages use ad-hoc signing and are not notarized; Windows packages are unsigned.
 
 Fan project, not affiliated with Anthropic or DeepSeek. "Claude" is a trademark of Anthropic.
 

@@ -11,8 +11,8 @@ const P = require('../src/main/persona')
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ojousama-agent-test-'))
 try {
   const fresh = new Store(path.join(dir, 'fresh'))
-  assert.equal(fresh.get('settings').backend, 'codex')
-  assert.equal(fresh.get('settings').permission, 'read-only')
+  assert.equal(fresh.get('settings').backend, process.platform === 'win32' ? 'dsh' : 'codex')
+  assert.equal(fresh.get('settings').permission, process.platform === 'win32' ? 'workspace-write' : 'read-only')
   const oldDir = path.join(dir, 'old')
   fs.mkdirSync(oldDir)
   const legacy = { settings: { provider: 'old-provider', model: 'old-model', cwd: 'C:\\work' }, chat: { sessionId: 'dsh-thread', messages: [{ role: 'user', text: 'hello' }] }, todos: [{ id: 't1', text: 'keep me' }] }
