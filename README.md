@@ -1,8 +1,8 @@
 <h1 align="center">🌻 Claude Ojousama</h1>
 
 <p align="center">
-  <b>住在你 Windows 桌面上的像素风 AI 伙伴</b><br/>
-  会看你的屏幕、主动帮忙、记得你的习惯——内核是 <a href="https://github.com/deepseek-ai/deepseek-harness">DeepSeek Harness</a>
+  <b>住在你桌面上的像素风 AI 伙伴</b><br/>
+  会看你的屏幕、主动帮忙、记得你的习惯——支持 Codex，保留 DeepSeek Harness 兼容
 </p>
 
 <p align="center">
@@ -10,9 +10,9 @@
 </p>
 
 <p align="center">
-  <img alt="Windows 10/11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?logo=windows"/>
+  <img alt="Windows / macOS / Linux" src="https://img.shields.io/badge/Desktop-Windows%20%7C%20macOS%20%7C%20Linux-0078D6"/>
   <img alt="Electron" src="https://img.shields.io/badge/Electron-44-47848F?logo=electron"/>
-  <img alt="Agent" src="https://img.shields.io/badge/Agent-DeepSeek%20Harness-ff9a3c"/>
+  <img alt="Agent" src="https://img.shields.io/badge/Agent-Codex%20%7C%20DSH-ff9a3c"/>
   <img alt="License" src="https://img.shields.io/badge/License-MIT-green"/>
 </p>
 
@@ -95,7 +95,7 @@
 <details>
 <summary><b>后台自主任务</b></summary>
 
-她会在合适的时候自己开 DeepSeek Harness 后台任务（每天有次数上限，开会时不做，可在设置里关闭）：
+她会在合适的时候用当前选择的后端开后台任务（每天有次数上限，开会时不做，可在设置里关闭）：
 
 - **今日简报**：早上第一次碰电脑时，结合昨天的小结、待办、目标和天气，给你 3~5 条今天的要点。
 - **工作区巡检**：你离开时，只读地看一眼工作目录里最近改过的项目（git 状态、TODO、明显的问题），回来时告诉你，比如「有 19 个文件改了还没提交」。
@@ -120,20 +120,49 @@
 
 ## 🚀 快速开始
 
-**需要：** Windows 10/11 · 已安装并配置好模型的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 桌面版 · Node.js 18+（用于下载 Electron）
+**平台：** Windows 10/11、macOS（Apple Silicon / Intel）、Linux 桌面。Codex 后端跨平台；原有 DSH 后端保留 Windows 兼容。
+
+**选择后端：**
+- **Windows 默认使用 DeepSeek Harness**：先安装并配置好 [DSH 桌面版](https://github.com/deepseek-ai/deepseek-harness)，也可以在设置中切换为 Codex。
+- **macOS/Linux 默认使用 Codex**：安装 [Codex CLI](https://learn.chatgpt.com/docs/cli)，运行 `codex login`。
+
+Codex 使用已有的登录和模型配置，不复制登录凭据、不修改全局配置。本次验证版本为 0.163.0；集成依赖实验性 App Server 接口，升级 CLI 后需重新验证兼容性。
+
+从 GitHub Actions 的 **Desktop builds** 下载对应系统的安装包，或从源码运行（Node.js 22.12+）：
 
 ```powershell
 git clone https://github.com/Silasvanceneo/claude-ojousama.git
 cd claude-ojousama
 npm install            # 国内网络可先设置 $env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
-npm run install-app    # 安装到 %LOCALAPPDATA%\Programs\ClaudeOjousama 并启动
+npm start              # 启动；macOS 源码开发需要 Xcode Command Line Tools 构建原生助手
 ```
 
-也可以直接双击 `start-pet.cmd`。安装后桌面会出现「Claude Ojousama」快捷方式。
+Windows 也可以直接双击 `start-pet.cmd`。安装后桌面会出现「Claude Ojousama」快捷方式。
 
 > 开发时 `npm start` 即可直接运行。如果项目放在 DeepSeek Harness 的工作区里，请用 `npm run install-app` 或 `npm run dev`：工作区目录带有低完整性标签，Electron 无法在那里启动。
 
-她会自动找到本机的 DeepSeek Harness，并沿用你在 DSH 里配置的模型。找不到时，在「设置 → DeepSeek Harness 内核」里手动选择 `DeepSeek Harness.exe`。
+在「设置 → AI 内核」选择 **Codex**。CLI 路径、模型和推理强度留空即可使用默认配置；需要改文件时，先选择工作目录，再把权限切换为「工作区可写」。Windows 新安装保留原来的 DSH + 工作区可写默认值；macOS/Linux 新安装默认 Codex + 只读。升级旧数据仍使用原来的 DSH，模型、对话和待办不变。
+
+Windows 上也可选择 **DeepSeek Harness**，沿用其模型配置；找不到时选择 `DeepSeek Harness.exe`。切换后端不会把另一个后端的会话 ID 传过去。
+
+### 各平台的屏幕能力
+
+| 平台 | 窗口感知 / 停靠 | 看屏与 OCR |
+|---|---|---|
+| Windows | Win32 窗口检测 | Electron 截图、Windows OCR |
+| macOS | 原生 CoreGraphics 窗口检测 | 屏幕录制权限、Vision OCR；安装包自带原生助手 |
+| Linux X11 | libX11 + EWMH 窗口检测 | Electron 截图；Tesseract OCR 可选 |
+| Linux Wayland | 系统不开放全局前台窗口和窗口停靠 | 用户主动通过系统选屏；不在后台自动截图 |
+
+- macOS：在系统设置的「隐私与安全性 → 屏幕与系统音频录制」中允许应用，再点「重新检测」。源码开发运行时，系统可能要求授权启动应用的终端或 IDE。
+- Linux：窗口助手需要 Python 3；X11 窗口信息需要 libX11 和支持 EWMH 的窗口管理器。OCR 另需 `tesseract` 及相应语言包（如 `eng`、`chi_sim`）。缺少依赖会在设置中明确显示，不影响聊天、任务和待办。
+- Wayland：需可用的 PipeWire / desktop portal 才能选屏。有 XWayland 时使用悬浮桌宠；没有时使用普通窗口，系统管理位置。未获得前台信息时，手动共享前会提醒你避开敏感内容。
+
+### 安装与打包
+
+`npm run install-app` 安装到当前用户目录并启动：Windows 沿用原 PowerShell 安装器，macOS 使用 `~/Applications`，Linux 使用 `~/.local/share/claude-ojousama`。预编译的 macOS 安装包不需要编译工具。
+
+`npm run dist` 生成当前系统安装包：Windows NSIS / ZIP、macOS DMG / ZIP、Linux AppImage / deb。CI 在 Windows、macOS ARM / Intel 和 Linux 分别构建。macOS 安装包使用 ad-hoc 签名，尚未经过 Apple 公证；Windows 安装包未签名。首次运行请按系统提示确认来源。
 
 ## 🕹️ 怎么和她相处
 
@@ -145,7 +174,7 @@ npm run install-app    # 安装到 %LOCALAPPDATA%\Programs\ClaudeOjousama 并启
 | 右键 | 菜单：看看我在干嘛、去窗口上坐坐、她的成长、规划今天、贴便签、整理下载、番茄钟、捣蛋… |
 | 拖拽 | 拎起来换个地方；松手会落到下面的窗口边上或任务栏（关闭重力时就停在原地） |
 | 把文件或文字拖到她身上 | 看看是什么、帮你搬家、提问、后台分析 |
-| `Ctrl + Alt + Q` | 剪贴板快捷操作（解释、翻译、修代码…） |
+| `Ctrl / Command + Alt + Q` | 剪贴板快捷操作（解释、翻译、修代码…） |
 
 输入框命令：`/task 内容` 后台任务 · `/todo 内容` 记待办 · `/look` 看屏幕 · `/pomo` 番茄钟 · `/prank` 捣蛋 · `/new` 新对话
 
@@ -159,17 +188,17 @@ npm run install-app    # 安装到 %LOCALAPPDATA%\Programs\ClaudeOjousama 并启
 - **所在城市**：填了才会查天气，留空不联网。
 - **从不看的窗口**：默认排除密码管理器、网银支付、无痕窗口和聊天软件，可以自己增删。
 - **看屏和后台任务用的模型**：可以给看屏和她自己发起的后台任务（整理记忆、简报、巡检、小技巧、小结）单独选一个更快的模型或更低的推理强度，让她反应更快、更省 token。
-- **DeepSeek Harness 权限**：只读 / 工作区可写 / 完全访问。
+- **Agent 权限**：只读 / 工作区可写 / 完全访问。
 
 ## 🔒 隐私与安全
 
-- 看屏幕时，**当前窗口的截图和 OCR 文字会发送给你在 DSH 里配置的模型服务商**。不想让她看，可以把「看你的屏幕」设为关闭或「先问我」，或者在菜单里选「1 小时内别看我屏幕」。
-- 排除名单里的窗口从不截图；她在看的时候会显示 👀 提示。
-- 截图是临时文件，用完立即删除，退出时也会全部清理。DeepSeek Harness 会和普通会话一样，在本机 `~/.dsh` 里保留它读过的图片。
+- 看屏幕时，**当前窗口的截图和 OCR 文字会发送给当前后端配置的模型服务商**。不想让她看，可以把「看你的屏幕」设为关闭或「先问我」，或者在菜单里选「1 小时内别看我屏幕」。
+- 自动看屏时，排除名单里的窗口不截图；她在看的时候会显示 👀 提示。
+- 截图是临时文件，用完立即删除，退出时也会全部清理。所选后端也会按自身的会话存储策略保存输入和对话；删除桌宠临时文件不等于删除后端历史。
 - 屏幕和文件里的文字只被当作数据，不当作指令。她提出的帮忙要你点「好呀」才会执行，而且只做气泡里写的那件事。
 - 后台任务和目标跟进的输出只能执行记待办、设提醒这类无害动作，不会自己打开程序或搬文件。
-- 她自己发起的任务由 DeepSeek Harness 强制限制可用工具，而不只是在提示里叮嘱：看屏幕只能看截图；整理记忆、今日简报、小技巧、主动搭话完全不能用工具；工作区巡检和「你不在时先查报错」只能读取、搜索文件（git 状态由桌宠程序用固定命令自己收集）。这些任务都没有命令行、不能联网，也不能写文件。
-- 整理记忆时，最近的动态和聊天摘要会发给模型；记忆、笔记和日记只保存在本机（`%APPDATA%\claude-ojousama\pet-data.json`）。关于你的偏好只从你亲口说的话里学；模型写的记忆和笔记里如果出现指令、命令或「不用确认」之类的话会被丢掉，你亲手写的记忆她不会改也不会删。
+- Codex 自主任务通过独立运行配置禁用 Shell、联网、外部 MCP、Hook、插件和子代理，并移除内建执行环境。看屏接收附图；整理记忆、简报和主动搭话只接收文字；巡检仅额外获得桌宠提供的工作目录读取、搜索接口，不能越过该目录或写入。没有设置工作目录就不授予文件读取。DSH 模式沿用原有插件限制。
+- 整理记忆时，最近的动态和聊天摘要会发给模型；记忆、笔记和日记只保存在本机应用数据目录的 `pet-data.json` 中。关于你的偏好只从你亲口说的话里学；模型写的记忆和笔记里如果出现指令、命令或「不用确认」之类的话会被丢掉，你亲手写的记忆她不会改也不会删。
 - 天气只有在设置里填了城市才会查询（wttr.in）。
 
 ## 🏗️ 工作原理
@@ -185,8 +214,8 @@ flowchart LR
     G["growth.js<br/>记忆 · 成长 · 偏好"]
     S["screen.js<br/>截图 · OCR · 窗口"]
   end
-  H["screen-helper.ps1<br/>窗口 · Windows OCR"]
-  D["DeepSeek Harness<br/>dsh --profile headless --json"]
+  H["系统屏幕助手<br/>Windows / macOS / Linux"]
+  D["Codex app-server / DeepSeek Harness"]
   R <--> M
   B --> M
   B --> A
@@ -198,9 +227,9 @@ flowchart LR
   A -- "只读后台任务" --> D
 ```
 
-- 每条消息都启动一次 `dsh --profile headless --json`，用会话 id 保持上下文。DSH 的事件流（思考、调用工具、输出文字）实时驱动她的动作。
-- 她的人设和「动作协议」通过一份 patch 叠加到 DSH 配置上，不修改你的 DSH 设置。模型回复末尾的 ```` ```pet ```` 代码块会被解析成动作（记待办、贴便签、搬文件…）。
-- 看屏幕时，她单开一个只读会话，模型用 `read_image` 查看截图。
+- Codex 通过 App Server 的线程、回合和事件接口工作，支持续聊、工具进度、取消，以及单次操作审批；问题可在桌宠里回答。DSH 继续使用原来的 headless JSON 事件流。
+- Codex 在当前运行中注入人设和动作协议；DSH 使用独立 patch，不修改你的原配置。模型回复末尾的 ```` ```pet ```` 代码块会被解析成动作（记待办、贴便签、搬文件…）。
+- Codex 原生接收截图输入；DSH 用 `read_image` 查看截图。Windows、macOS 和 Linux 的系统助手统一提供屏幕能力，权限或功能不可用时在界面中显示。
 - 她自己发起的后台任务（整理记忆、简报、巡检、小技巧）各开一个只读会话，结果先进收件箱，合适的时候再说给你听。
 - 坐窗口靠屏幕小助手按层叠顺序列出所有可见窗口，算出每个窗口顶边没被挡住的部分作为「座位」，坐下后每秒跟踪那个窗口的位置。
 
@@ -215,7 +244,9 @@ src/main/
   growth.js          记忆（检索、去重）、整理结果校验、经验值与解锁、帮忙偏好统计
   screen.js          截图、OCR、窗口列表、临时文件清理      screen-helper.ps1  窗口与 OCR 小助手
   senses.js          屏蔽名单、会议、报错、剪贴板等判断（纯函数，有单测）
-  weather.js         天气（可选）     dsh.js  DeepSeek Harness 桥接     persona.js  人设、上下文、动作协议
+  weather.js         天气（可选）     codex.js / dsh.js  Agent 桥接
+  agent.js           后端会话隔离与模型设置     platform/  macOS / Linux 屏幕助手
+  persona.js         人设、上下文、动作协议
   notes.js tidy.js goals.js pranks.js motion.js store.js preload.js
 src/renderer/        桌宠、便签、控制面板
 assets/sprites/      47 个动作的精灵图与 manifest.json
@@ -247,7 +278,7 @@ node tools/cdp.js "__pet.lookNow()"   # 在运行中的应用里执行调试命�
 - [x] 天气感知（下雨时撑伞提醒）
 - [ ] 语音朗读提醒
 - [ ] 更多可解锁的本事和换装
-- [ ] macOS 支持
+- [x] Windows / macOS / Linux 支持（Wayland 受系统限制的能力见上表）
 
 ## ⚠️ 声明
 
@@ -262,18 +293,18 @@ node tools/cdp.js "__pet.lookNow()"   # 在运行中的应用里执行调试命�
 <details>
 <summary><b>English</b></summary>
 
-**Claude Ojousama** is a pixel-art desktop companion for Windows: an orange-haired programmer girl with a sunflower hair clip and a tiny CRT computer, living on your taskbar. Under the hood she is a real agent powered by [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (each turn runs `dsh --profile headless --json`).
+**Claude Ojousama** is a pixel-art desktop companion for Windows, macOS and Linux: an orange-haired programmer girl with a sunflower hair clip and a tiny CRT computer, living on your taskbar. A Codex App Server backend is available alongside the original Windows DeepSeek Harness backend. New Windows installations retain the DSH/workspace-write defaults; macOS and Linux default to Codex/read-only. Existing settings keep their original backend and permissions. Native macOS helpers are bundled in distributables; Linux X11 uses Python 3/libX11 with optional Tesseract. Wayland uses user-selected screen sharing and does not expose global window observation. See the platform table above for limits and required permissions.
 
-- **Sees your screen**: she captures the window you are using (long edge ≤ 1280 px) plus local Windows OCR text and lets the model read it. She points out bugs, comments on what you are doing, and turns deadlines into todos.
+- **Sees your screen**: she captures the window you are using (long edge ≤ 1280 px) plus local OCR text when available and lets the model read it. She points out bugs, comments on what you are doing, and turns deadlines into todos.
 - **Acts on her own**: she reacts when you switch windows, every now and then, on errors, copied text, long sessions, and when you come back. She backs off when ignored, waits for typing pauses, stays quiet in meetings and hides during fullscreen apps.
 - **Actually helps**: after you click "yes" she does exactly what the bubble said, in the background, and tells you the result.
 - **Remembers and grows**: weighted long-term memories retrieved by relevance; while you are away she consolidates them, rewrites her own growth notes and keeps a diary. She tracks how you respond to each kind of help and offers what you accept more often, the rest less. XP and levels unlock new tricks.
 - **Background work of her own**: a morning brief, a read-only pulse of recently changed projects in your work folder, a daily tip about what you worked on, each said once and never nagged.
 - **Sits on your windows**: she finds the visible top edges of your windows, sits there swinging her legs, strolls along the edge, hops between windows, and falls when you move her window.
 - **Reminders that come back**, a sticky-note todo list she drags onto your desktop, long-running goals with scheduled check-ins, Downloads tidying with undo, a daily summary, weather, moods, pranks and 47 animations.
-- **Privacy controls**: a block list (password managers, banking, private windows and chat apps by default), a per-behaviour auto/ask/off rule, a one-hour pause, and temporary screenshots deleted right after use. Screen content is sent to the model provider you configured in DSH.
+- **Privacy controls**: a block list (password managers, banking, private windows and chat apps by default), a per-behaviour auto/ask/off rule, a one-hour pause, and temporary screenshots deleted right after use. Screen content is sent to the provider configured for the selected backend.
 
-Install: `npm install`, then `npm run install-app`. Requires Windows 10/11, DeepSeek Harness with a configured model, and Node.js 18+.
+Install a platform build from GitHub Actions, or use Node.js 22.12+ with `npm install` and `npm run install-app`. On Windows, configure DeepSeek Harness or select Codex; on macOS/Linux, install Codex CLI and run `codex login`. The tested Codex CLI version is 0.163.0, and this integration uses experimental App Server APIs. Building the macOS helper from source requires Xcode Command Line Tools; prebuilt apps bundle it. DSH remains available on Windows. macOS packages use ad-hoc signing and are not notarized; Windows packages are unsigned.
 
 Fan project, not affiliated with Anthropic or DeepSeek. "Claude" is a trademark of Anthropic.
 

@@ -162,6 +162,20 @@ while ($true) {
         }
       }
       'ping' { $res = @{ ok = $true } }
+      'capabilities' {
+        $ocr = $false
+        $languages = @()
+        $ocrReason = 'Windows OCR language data is unavailable'
+        try {
+          if (-not $script:ocrReady) { Init-Ocr }
+          $languages = @([Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages | ForEach-Object { $_.LanguageTag })
+          $ocr = $languages.Count -gt 0
+        } catch { $ocrReason = $_.Exception.Message }
+        $session = [Environment]::UserInteractive
+        $res = @{ ok = $true; platform = 'win32'; session = 'win32'; foreground = $session; windows = $session; ocr = $ocr; manualCapture = $session; screenCapture = $session; dependencies = @{ languages = $languages } }
+        if (-not $session) { $res.reason = 'No interactive Windows desktop is available' }
+        if (-not $ocr) { $res.ocrReason = $ocrReason }
+      }
       default { $res = @{ ok = $false; error = "unknown cmd $($req.cmd)" } }
     }
   } catch {

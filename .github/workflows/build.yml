@@ -1,0 +1,62 @@
+name: Desktop builds
+
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-2025
+            artifact: windows-x64-unsigned
+          - name: macOS Apple Silicon
+            os: macos-15
+            artifact: macos-arm64-unnotarized
+          - name: macOS Intel
+            os: macos-15-intel
+            artifact: macos-x64-unnotarized
+          - name: Linux x64
+            os: ubuntu-24.04
+            artifact: linux-x64
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24.18.0'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build:helpers
+      - run: npm test
+      - run: npm run check
+      - name: Install isolated X11 test dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3 libx11-6 xvfb xauth openbox x11-utils wmctrl tesseract-ocr tesseract-ocr-eng
+      - name: Exercise native Linux windows and OCR
+        if: runner.os == 'Linux'
+        run: xvfb-run -a env OJOUSAMA_NATIVE_X11_TEST=1 python3 tests/linux-native.test.py
+      - run: npm run dist
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: error
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/*.dmg
+            dist/*.AppImage
+            dist/*.deb
+          retention-days: 14

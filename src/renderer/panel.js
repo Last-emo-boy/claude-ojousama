@@ -254,8 +254,37 @@ function renderGrowth() {
   $('#reflect-now').disabled = !!snap.agendaRunning
 }
 
+function renderScreenCapabilities() {
+  const caps = snap.screenCapabilities
+  const summary = $('#screen-capability-summary')
+  const reason = $('#screen-capability-reason')
+  if (!caps) {
+    summary.textContent = '正在检测屏幕能力…'
+    reason.hidden = true
+    return
+  }
+  const platform = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' }[caps.platform] || caps.platform || '当前系统'
+  const session = ['aqua', 'win32'].includes(caps.session) ? '' : { x11: 'X11', wayland: 'Wayland', headless: '无图形会话' }[caps.session] || caps.session
+  const state = (value) => value === true ? '可用' : value === false ? '不可用' : '检测中'
+  const capture = caps.platform === 'darwin' && caps.manualCapture && caps.screenCapture === false
+    ? '手动截图需授权'
+    : `${caps.session === 'wayland' ? '手动选屏' : '手动截图'}${state(caps.manualCapture)}`
+  summary.textContent = [platform, session, capture, `前台窗口${state(caps.foreground)}`, `窗口停靠${state(caps.windows)}`, `OCR ${state(caps.ocr)}`].filter(Boolean).join(' · ')
+  const reasons = [...new Set([caps.reason, caps.ocrReason].filter(Boolean))]
+  reason.textContent = reasons.join('；')
+  reason.hidden = !reasons.length
+  for (const control of $$('[data-requires]')) {
+    control.disabled = caps[control.dataset.requires] === false
+    control.title = control.disabled ? reasons.join('；') || { windows: '需要窗口检测能力', foreground: '需要前台窗口检测能力', manualCapture: '需要可用的图形桌面和截图能力' }[control.dataset.requires] : ''
+  }
+  if ($('#prank-select').selectedOptions[0].disabled) $('#prank-select').value = ''
+}
+
 function renderSettings() {
   const s = snap.settings
+  const backend = s.backend || 'dsh'
+  for (const group of $$('[data-backend]')) group.hidden = group.dataset.backend !== backend
+  $('#open-web').hidden = backend !== 'dsh'
   for (const input of $$('[data-key]')) {
     if (document.activeElement === input) continue
     const v = s[input.dataset.key]
@@ -293,12 +322,18 @@ function renderSettings() {
     sel.append(g)
   }
   sel.value = s.provider && s.model ? `${s.provider}::${s.model}` : ''
-  $('#dsh-status').textContent = snap.dshFound ? `✅ 已找到：${snap.dshPath}` : '❌ 没找到 DeepSeek Harness，请填写路径'
+  const name = snap.backendName || (backend === 'codex' ? 'Codex' : 'DeepSeek Harness')
+  const found = snap.backendFound == null ? snap.dshFound : snap.backendFound
+  const path = snap.backendPath || (backend === 'dsh' ? snap.dshPath : '')
+  $('#backend-status').textContent = found
+    ? `已找到 ${name}：${path}`
+    : backend === 'codex' ? '未找到 Codex CLI。安装后运行 codex login，或选择路径。' : '未找到 DeepSeek Harness，请选择路径。'
+  renderScreenCapabilities()
 }
 
 function render() {
   if (!snap) return
-  $('#status').textContent = snap.busy ? '正在思考…' : '在线'
+  $('#status').textContent = snap.busy ? '正在思考…' : snap.backendFound === false ? '未找到内核' : '待命'
   $('#status').classList.toggle('busy', snap.busy)
   const MOOD = ['😢', '😟', '😐', '🙂', '😊', '😄', '🥰']
   $('#mood').textContent = `${MOOD[Math.max(0, Math.min(6, (snap.mood || 0) + 3))]} ❤ ${snap.affection || 0}`
@@ -427,12 +462,34 @@ $('#pick-exe').addEventListener('click', async () => {
   const f = await pet.invoke('pick:exe')
   if (f) pet.invoke('settings:set', { dshExe: f })
 })
+$('#pick-codex').addEventListener('click', async () => {
+  const f = await pet.invoke('pick:codex')
+  if (f) pet.invoke('settings:set', { codexExe: f })
+})
 $('#prank-run').addEventListener('click', () => {
   const v = $('#prank-select').value
   if (v === 'climb') pet.invoke('climb:now')
   else pet.invoke('prank', v || undefined)
 })
 $('#look-now').addEventListener('click', () => pet.invoke('look:now'))
+$('#screen-refresh').addEventListener('click', async () => {
+  const button = $('#screen-refresh')
+  button.disabled = true
+  button.textContent = '检测中…'
+  try {
+    const capabilities = await pet.invoke('screen:refresh')
+    if (capabilities && snap) {
+      snap.screenCapabilities = capabilities
+      renderScreenCapabilities()
+    }
+  } catch (e) {
+    $('#screen-capability-reason').textContent = `重新检测失败：${e.message || e}`
+    $('#screen-capability-reason').hidden = false
+  } finally {
+    button.disabled = false
+    button.textContent = '重新检测'
+  }
+})
 $('#screen-pause').addEventListener('click', () => pet.invoke('screen:pause', snap && snap.screenPausedUntil > Date.now() ? 0 : 60))
 $('#glance-model').addEventListener('change', (e) => pet.invoke('settings:set', { glanceModel: e.target.value }))
 

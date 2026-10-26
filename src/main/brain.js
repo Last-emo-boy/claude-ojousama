@@ -94,7 +94,14 @@ class Brain {
     // Background work she starts herself (memories, brief, workspace pulse, tips) and the weather.
     pet.agendaTick(now)
     pet.weatherTick(now).catch(() => {})
-    if (!info) return
+    if (!info) {
+      // Window observation is optional (Wayland, denied permission); reports still reach the user.
+      if (pet.userPresent() && !this.isQuiet()) {
+        this.dailySummary()
+        this.suggest(now)
+      }
+      return
+    }
     if (info.key !== this.fgKey) {
       this.fgKey = info.key
       this.fgSince = now
