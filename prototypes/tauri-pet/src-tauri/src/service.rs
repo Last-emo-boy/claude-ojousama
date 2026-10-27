@@ -615,11 +615,15 @@ impl Service {
                 r.chat = None;
                 let backend = r.chat_backend.clone();
                 let mut task = task.clone();
+                let mut has_pose = false;
                 drop(r);
                 if task.status == "completed" {
                     match growth::actions(&task.output) {
                         Ok((text, actions)) => {
                             task.output = text;
+                            has_pose = actions
+                                .iter()
+                                .any(|a| a["action"] == "emote" || a["action"] == "sign");
                             self.run_actions(actions)?;
                         }
                         Err(error) => {
@@ -656,7 +660,7 @@ impl Service {
                         .push(json!({"role":role,"text":text,"ts":now}));
                     Ok(())
                 })?;
-                if task.status == "completed" {
+                if task.status == "completed" && !has_pose {
                     self.say(&task.output.chars().take(90).collect::<String>(), "happy");
                 }
                 self.changed();

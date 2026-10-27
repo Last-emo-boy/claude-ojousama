@@ -776,12 +776,12 @@ fn run_task(
     launch: Launch,
     controls: mpsc::Receiver<Control>,
 ) {
-    if request.backend == "dsh" {
-        dsh::run(shared, id, request, launch, controls);
-        return;
-    }
     if matches!(controls.try_recv(), Ok(Control::Cancel)) {
         shared.finish(id, Outcome::Cancelled);
+        return;
+    }
+    if request.backend == "dsh" {
+        dsh::run(shared, id, request, launch, controls);
         return;
     }
     let mut command = Command::new(&launch.executable);

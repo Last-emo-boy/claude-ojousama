@@ -267,7 +267,7 @@ pub fn one_line(text: &str) -> Option<String> {
         return None;
     }
     let text = text.lines().next()?.trim();
-    let text = text.chars().take(100).collect::<String>();
+    let text = text.chars().take(60).collect::<String>();
     if text.is_empty() {
         None
     } else {

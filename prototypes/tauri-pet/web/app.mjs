@@ -248,7 +248,10 @@ function renderPet() {
   const task = currentTask(state.tasks)
   const info = presentation(task, state.motion.phase)
   renderStatus($('pet-status'), task)
-  $('pet-message').textContent = short(companionBubble?.until > Date.now() && !info.active ? companionBubble.text : info.text, 105)
+  const companionSpeaking = companionBubble?.until > Date.now() && !info.active
+  $('pet-message').textContent = short(companionSpeaking ? companionBubble.text || info.text : info.text, 105)
+  $('pet-bubble').classList.toggle('companion-speaking', !!companionSpeaking)
+  if(companionSpeaking){$('pet-status').textContent='大小姐';$('pet-status').dataset.state='idle'}
   $('pet-error').textContent = state.error
   $('pet-bubble').classList.toggle('has-error', !!state.error)
   $('pet-stop').classList.toggle('hidden', !info.active)

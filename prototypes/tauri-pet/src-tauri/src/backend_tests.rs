@@ -80,11 +80,11 @@ fn wait(manager: &TaskManager, predicate: impl Fn(&TaskView) -> bool) -> TaskVie
                 return view.clone();
             }
         }
-        assert!(
-            Instant::now() < deadline,
-            "task did not reach expected state: {:?}",
-            manager.list()
-        );
+        if Instant::now() >= deadline {
+            let last = manager.list();
+            manager.shutdown();
+            panic!("task did not reach expected state: {last:?}");
+        }
         thread::sleep(Duration::from_millis(5));
     }
 }
@@ -370,6 +370,7 @@ fn dsh_cancellation_reaps_its_owned_host() {
     request.backend = "dsh".into();
     request.dsh_test_home = Some(dir.clone());
     let task = manager.start(request).unwrap();
+    wait(&manager, |v| v.status == "thinking");
     manager.cancel(task.id).unwrap();
     let result = wait(&manager, |v| terminal(&v.status));
     assert_eq!(result.status, "cancelled");

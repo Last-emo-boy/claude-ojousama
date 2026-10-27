@@ -160,3 +160,5 @@ details.settings summary { cursor: pointer; width: fit-content; }
 #look-window { flex: 1; min-width: 80px; }
 
 #panel-error { position: sticky; top: 8px; z-index: 2; background: #fff4ee; border-radius: 8px; padding: 10px 13px; }
+
+.pet-bubble.companion-speaking .pet-message { -webkit-line-clamp: 3; }
