@@ -1,6 +1,6 @@
 import { isActive, pendingKey, presentation } from './model.mjs'
 
-const destinations = { chat:'聊两句', tasks:'查看任务', todos:'全部提醒', goals:'查看目标', growth:'看看成长', activity:'查看动态' }
+const destinations = { chat:'聊两句', tasks:'查看任务', todos:'全部提醒', goals:'查看目标', growth:'看看成长', activity:'查看动态', files:'看看文件' }
 export function bubbleAction(notice) {
   if (notice?.source==='clipboard') return {command:'clipboard_offer_open',args:{token:notice.token,action:'preview'},label:'看看文字'}
   const tab = notice?.source==='task' ? 'tasks' : notice?.source==='alert' ? 'todos' : notice?.source==='speech' && Object.hasOwn(destinations,notice.tab) ? notice.tab : 'chat'

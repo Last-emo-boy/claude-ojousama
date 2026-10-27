@@ -4,7 +4,7 @@ use crate::{
     backend::{StartRequest, TaskManager, TaskView},
     behavior, clipboard_watch,
     companion::{self, Companion},
-    growth, observer, utilities,
+    file_watch, growth, observer, utilities,
 };
 use serde_json::{json, Value};
 use std::{
@@ -24,6 +24,8 @@ pub struct Service {
     pub tasks: TaskManager,
     work: PathBuf,
     documents: PathBuf,
+    downloads: Result<PathBuf, String>,
+    tidy: Arc<Mutex<()>>,
     runtime: Arc<Mutex<Runtime>>,
     emit: Emit,
     activity_until: Arc<AtomicU64>,
@@ -105,6 +107,14 @@ struct Runtime {
     agenda: agenda::State,
     next_suggestion: u64,
     clipboard: clipboard_watch::State,
+    files: FileState,
+}
+#[derive(Default)]
+struct FileState {
+    generation: u64,
+    scanning: bool,
+    next: u64,
+    error: String,
 }
 impl Service {
     pub fn new(
@@ -121,10 +131,16 @@ impl Service {
             background: TaskManager::ephemeral(Arc::new(|_| {})),
             work,
             documents,
+            downloads: Err("系统下载目录不可用，请手动选择文件夹".into()),
+            tidy: Arc::new(Mutex::new(())),
             runtime: Arc::new(Mutex::new(Runtime::default())),
             emit,
             activity_until: Arc::new(AtomicU64::new(0)),
         })
+    }
+    pub fn with_download_folder(mut self, downloads: Result<PathBuf, String>) -> Self {
+        self.downloads = downloads;
+        self
     }
     pub fn snapshot(&self) -> Value {
         let r = self.runtime.lock().unwrap();
@@ -155,7 +171,16 @@ impl Service {
             ambient_reason(&data, r.body_context, companion::now())
         };
         let agenda_status = json!({"used":agenda::used(&data, companion::now()),"limit":data["settings"]["agendaPerDay"],"running":r.job.as_ref().filter(|j| !j.observation()).map(|j| j.kind.as_str()),"preparing":r.preparing.is_some_and(|p|matches!(p,Preparation::Background))});
-        json!({"agenda":agenda_status,"clipboard":{"offer":r.clipboard.notice(companion::now()),"error":r.clipboard.error,"supported":observer::screen_supported()},"data":data,"alert":alert,"chatTask":r.chat,"observer":{"status":r.status,"error":r.error,"running":running,"pauseReason":pause,"permission":observer::permission(),"capabilities":capabilities}})
+        let files_pause = if !observer::screen_supported() {
+            Some("session-unavailable")
+        } else if !r.body_context.fresh(companion::now()) {
+            Some("starting")
+        } else if !r.body_context.unlocked {
+            Some("locked")
+        } else {
+            None
+        };
+        json!({"files":{"error":r.files.error,"scanning":r.files.scanning,"pauseReason":files_pause},"agenda":agenda_status,"clipboard":{"offer":r.clipboard.notice(companion::now()),"error":r.clipboard.error,"supported":observer::screen_supported()},"data":data,"alert":alert,"chatTask":r.chat,"observer":{"status":r.status,"error":r.error,"running":running,"pauseReason":pause,"permission":observer::permission(),"capabilities":capabilities}})
     }
     pub fn changed(&self) {
         (self.emit)("companion:update", self.snapshot());
@@ -397,7 +422,267 @@ impl Service {
             self.changed();
         }
     }
+    fn files_with(
+        &self,
+        now: u64,
+        unlocked: impl Fn() -> bool,
+        read: impl FnOnce(&[String]) -> Vec<(String, Result<file_watch::Folder, String>)>,
+    ) -> Result<bool, String> {
+        let initially_unlocked = unlocked();
+        let (generation, configuration, folders) = {
+            let mut r = self.runtime.lock().unwrap();
+            let d = self.data.snapshot();
+            if r.stopping
+                || !initially_unlocked
+                || !r.body_context.unlocked
+                || !r.body_context.fresh(now)
+                || !file_watch::enabled(&d)
+                || r.files.scanning
+                || now < r.files.next
+            {
+                return Ok(false);
+            }
+            r.files.scanning = true;
+            r.files.next = now + 30_000;
+            (
+                r.files.generation,
+                file_watch::configuration(&d),
+                d["settings"]["watchFolders"].clone(),
+            )
+        };
+        // Directory enumeration never holds the runtime mutex. Settings changes
+        // revoke this lease even if a slow filesystem read is still in flight.
+        let roots = if folders.is_null() {
+            file_watch::roots(&folders, &self.downloads)
+        } else {
+            folders
+                .as_array()
+                .ok_or("文件夹设置格式错误".to_string())
+                .and_then(|a| {
+                    a.iter()
+                        .map(|v| v.as_str().map(str::to_owned).ok_or("文件夹路径无效".into()))
+                        .collect()
+                })
+        };
+        let results = roots.as_ref().map(|roots| read(roots));
+        let still_unlocked = unlocked();
+        let now = companion::now().max(now);
+        let mut r = self.runtime.lock().unwrap();
+        r.files.scanning = false;
+        let d = self.data.snapshot();
+        if r.stopping
+            || !still_unlocked
+            || generation != r.files.generation
+            || configuration != file_watch::configuration(&d)
+            || !r.body_context.unlocked
+            || !r.body_context.fresh(now)
+        {
+            return Ok(false);
+        }
+        let previous_error = r.files.error.clone();
+        let mut errors = Vec::new();
+        if let Ok(roots) = &roots {
+            if d["settings"]["rules"]["tidy"] == "auto"
+                && d["watch"]["native"]["autoRoots"] != json!(roots)
+            {
+                errors.push("自动整理的文件夹范围尚未确认，请重新保存文件夹设置".to_string());
+            }
+        }
+        let mut changed = false;
+        match results {
+            Err(error) => errors.push(error.clone()),
+            Ok(results) => {
+                let mut watch = d["watch"].clone();
+                let mut added = 0;
+                for (folder, result) in results {
+                    match result {
+                        Ok(snapshot) => {
+                            let mut update = watch.clone();
+                            match file_watch::reconcile(
+                                &mut update,
+                                &snapshot,
+                                now,
+                                d["settings"]["rules"]["tidy"] == "off",
+                            ) {
+                                Ok(count) => {
+                                    watch = update;
+                                    added += count;
+                                }
+                                Err(error) => errors.push(format!("{folder}：{error}")),
+                            }
+                        }
+                        Err(error) => errors.push(format!("{folder}：{error}")),
+                    }
+                }
+                if watch != d["watch"] {
+                    self.data.change(|d| {
+                        // The lease is still held. Other watch/tidy commands
+                        // serialize through this same runtime owner.
+                        d["watch"] = watch;
+                        if added > 0 {
+                            file_watch::notice(d, now);
+                        } else {
+                            file_watch::remove_ready(d, |_| false);
+                        }
+                        Ok(())
+                    })?;
+                    changed = true;
+                }
+            }
+        }
+        r.files.error = errors.join("\n");
+        changed |= r.files.error != previous_error;
+        drop(r);
+        if changed {
+            self.changed();
+        }
+        if let Ok(roots) = roots {
+            self.auto_tidy(&roots, now, &unlocked)?;
+        }
+        Ok(changed)
+    }
+    fn auto_tidy(
+        &self,
+        roots: &[String],
+        now: u64,
+        unlocked: &impl Fn() -> bool,
+    ) -> Result<(), String> {
+        let Ok(_owner) = self.tidy.try_lock() else {
+            return Ok(());
+        };
+        let folders = {
+            let r = self.runtime.lock().unwrap();
+            let d = self.data.snapshot();
+            if r.stopping
+                || !file_watch::enabled(&d)
+                || d["settings"]["rules"]["tidy"] != "auto"
+                || d["watch"]["native"]["autoRoots"] != json!(roots)
+                || d["watch"]["native"]["autoError"]
+                    .as_str()
+                    .is_some_and(|s| !s.is_empty())
+                || d["tidyPreview"].is_object()
+                || self.tasks.list().iter().any(|t| !done(t))
+                || r.job.is_some()
+                || r.preparing.is_some()
+                || attention_reason(&d, r.body_context, now).is_some()
+            {
+                return Ok(());
+            }
+            roots
+                .iter()
+                .filter(|folder| !file_watch::selected(&d, folder).is_empty())
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        // A single batch owns the last reversible journal. Do not overwrite a
+        // partially failed run with another automatic attempt.
+        if let Some(folder) = folders.first() {
+            let files = file_watch::selected(&self.data.snapshot(), folder);
+            let plan = utilities::tidy_selected(std::path::Path::new(folder), &files);
+            let now = companion::now().max(now);
+            if !unlocked()
+                || self.runtime.lock().unwrap().stopping
+                || attention_reason(
+                    &self.data.snapshot(),
+                    self.runtime.lock().unwrap().body_context,
+                    now,
+                )
+                .is_some()
+                || self.tasks.list().iter().any(|t| !done(t))
+            {
+                return Ok(());
+            }
+            let result = plan.and_then(|plan| utilities::tidy_apply_plan(&self.data, &plan));
+            let mut r = self.runtime.lock().unwrap();
+            match result {
+                Ok(moves) => {
+                    if moves.as_array().is_none_or(|a| a.is_empty()) {
+                        return Ok(());
+                    }
+                    self.data.change(|d|{
+                        file_watch::remove_ready(d,|v|moves.as_array().is_some_and(|a|a.iter().any(|m|m["from"]==v["full"])));
+                        companion::log(d,"tidy",&format!("自动整理了 {} 个新文件，可撤销上次整理",moves.as_array().map_or(0,Vec::len)));
+                        let items=d["inbox"].as_array_mut().ok_or("通知数据损坏")?;
+                        items.push(json!({"id":format!("native-tidy-{now}"),"kind":"tidy","text":"新文件整理好了，需要的话可以撤销。","tab":"files","createdAt":now}));
+                        if items.len()>12 {items.remove(0);}
+                        Ok(())
+                    })?;
+                }
+                Err(error) => {
+                    r.files.error = format!(
+                        "自动整理已暂停：{error}。请检查文件，必要时撤销上次整理，再重新保存设置。"
+                    );
+                    self.data.change(|d| {
+                        d["watch"]["native"]["autoError"] = json!(r.files.error);
+                        Ok(())
+                    })?;
+                }
+            }
+            drop(r);
+            self.changed();
+        }
+        Ok(())
+    }
     pub fn apply(&self, command: &str, args: Value) -> Result<Value, String> {
+        let _configuration_owner = if command == "settings:set"
+            && (args.get("watchFolders").is_some() || args.get("rules").is_some())
+        {
+            Some(self.tidy.lock().unwrap())
+        } else {
+            None
+        };
+        if command == "watch:set" {
+            let _owner = self.tidy.lock().unwrap();
+            let enabled = args["enabled"].as_bool().ok_or("文件发现开关格式错误")?;
+            let folders = args.get("folders").ok_or("请选择要关注的文件夹")?.clone();
+            let mode = args["mode"].as_str().ok_or("请选择整理方式")?;
+            let roots = if enabled {
+                file_watch::roots(&folders, &self.downloads)?
+            } else {
+                Vec::new()
+            };
+            let folders = if folders.is_null() {
+                folders
+            } else if enabled {
+                json!(roots)
+            } else {
+                folders
+            };
+            let mut r = self.runtime.lock().unwrap();
+            self.data
+                .change(|d| file_watch::configure(d, enabled, folders, mode, &roots))?;
+            r.files.generation = r.files.generation.wrapping_add(1);
+            r.files.next = 0;
+            r.files.error.clear();
+            drop(r);
+            self.changed();
+            return Ok(Value::Null);
+        }
+        if matches!(command, "watch:preview" | "watch:ignore") {
+            let _owner = self.tidy.lock().unwrap();
+            let folder = args["folder"].as_str().ok_or("请选择新文件所在目录")?;
+            let files = file_watch::selected(&self.data.snapshot(), folder);
+            if files.is_empty() {
+                return Err("这批新文件已经处理或发生变化，请刷新列表".into());
+            }
+            if command == "watch:ignore" {
+                let _runtime = self.runtime.lock().unwrap();
+                self.data.change(|d| {
+                    file_watch::remove_ready(d, |v| v["folder"] == folder);
+                    Ok(())
+                })?;
+            } else {
+                let mut plan = utilities::tidy_selected(std::path::Path::new(folder), &files)?;
+                plan["watchFolder"] = json!(folder);
+                let _runtime = self.runtime.lock().unwrap();
+                self.data.change(|d| {
+                    d["tidyPreview"] = plan;
+                    Ok(())
+                })?;
+            }
+            self.changed();
+            return Ok(Value::Null);
+        }
         if command == "weather:refresh" {
             let city = self.data.snapshot()["settings"]["weatherCity"]
                 .as_str()
@@ -422,6 +707,7 @@ impl Service {
             return Ok(value);
         }
         if command == "tidy:preview" {
+            let _owner = self.tidy.lock().unwrap();
             let folder = args["folder"].as_str().ok_or("请选择整理目录")?;
             let plan = utilities::tidy_plan(std::path::Path::new(folder))?;
             self.data.change(|d| {
@@ -432,12 +718,34 @@ impl Service {
             return Ok(plan);
         }
         if command == "tidy:apply" {
+            let _owner = self.tidy.lock().unwrap();
             let result = utilities::tidy_apply(&self.data)?;
+            {
+                let _runtime = self.runtime.lock().unwrap();
+                self.data.change(|d| {
+                    file_watch::remove_ready(d, |v| {
+                        result
+                            .as_array()
+                            .is_some_and(|a| a.iter().any(|m| m["from"] == v["full"]))
+                    });
+                    Ok(())
+                })?;
+            }
             self.say("整理好了，需要的话可以撤销。", "clean");
             self.changed();
             return Ok(result);
         }
+        if command == "tidy:cancel" {
+            let _owner = self.tidy.lock().unwrap();
+            self.data.change(|d| {
+                d["tidyPreview"] = Value::Null;
+                Ok(())
+            })?;
+            self.changed();
+            return Ok(Value::Null);
+        }
         if command == "tidy:undo" {
+            let _owner = self.tidy.lock().unwrap();
             let result = utilities::tidy_undo(&self.data)?;
             self.say("刚才的整理已撤销。", "wave");
             self.changed();
@@ -656,6 +964,10 @@ impl Service {
         };
         if command == "settings:set" && !clipboard_watch::enabled(&self.data.snapshot()) {
             self.clipboard_reset();
+        }
+        if command == "settings:set" && _configuration_owner.is_some() {
+            let mut r = self.runtime.lock().unwrap();
+            r.files.generation = r.files.generation.wrapping_add(1);
         }
         if matches!(command, "screen:pause" | "observation:set") {
             self.clipboard_reset();
@@ -1168,6 +1480,12 @@ impl Service {
         self.reconcile_ambient(&self.data.snapshot());
         self.finish_jobs()?;
         self.refresh_alerts()?;
+        self.files_with(companion::now(), observer::unlocked, |roots| {
+            roots
+                .iter()
+                .map(|p| (p.clone(), file_watch::read(p)))
+                .collect()
+        })?;
         let d = self.data.snapshot();
         let busy = self.tasks.list().iter().any(|t| !done(t));
         let idle = observer::idle_seconds();
@@ -1333,7 +1651,13 @@ impl Service {
         self.say_to(
             &line,
             if growth { "write" } else { "wave" },
-            if growth { "growth" } else { "activity" },
+            if growth {
+                "growth"
+            } else if notice["tab"] == "files" {
+                "files"
+            } else {
+                "activity"
+            },
         );
         self.changed();
         Ok(true)
@@ -1700,6 +2024,9 @@ impl Service {
             runtime.clipboard.reset(true);
         }
         self.background.shutdown();
+        // The app also owns explicit user tasks; main shuts those down separately.
+        // Let an in-flight local file transaction finish its reversible journal.
+        drop(self.tidy.lock().unwrap());
     }
 }
 fn done(t: &TaskView) -> bool {
@@ -1713,6 +2040,466 @@ fn background_label(kind: &str) -> &'static str {
         "tip" => "每日小技巧",
         "summary" => "今日小结",
         _ => "今日计划",
+    }
+}
+
+#[cfg(test)]
+mod file_tests {
+    use super::*;
+    use std::{
+        fs,
+        path::Path,
+        time::{Duration, SystemTime},
+    };
+    type Events = Arc<Mutex<Vec<(String, Value)>>>;
+    fn fixture(name: &str, mode: &str) -> (Service, PathBuf, String, Events) {
+        let root = std::env::temp_dir().join(format!("ojousama-files-{name}-{}", companion::now()));
+        fs::create_dir_all(root.join("watched")).unwrap();
+        let folder = fs::canonicalize(root.join("watched"))
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let data = Companion::open(root.join("data.json"), None).unwrap();
+        data.change(|d| {
+            d["settings"]["quietStart"] = json!("");
+            Ok(())
+        })
+        .unwrap();
+        let events: Events = Arc::default();
+        let copy = events.clone();
+        let service = Service::new(
+            data,
+            TaskManager::ephemeral(Arc::new(|_| {})),
+            root.join("work"),
+            root.join("documents"),
+            Arc::new(move |n, v| copy.lock().unwrap().push((n.into(), v))),
+        )
+        .unwrap();
+        service
+            .apply(
+                "watch:set",
+                json!({"enabled":true,"folders":[folder],"mode":mode}),
+            )
+            .unwrap();
+        (service, root, folder, events)
+    }
+    fn write(folder: &str, name: &str) {
+        let path = Path::new(folder).join(name);
+        fs::write(&path, b"controlled fixture content").unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(300))
+            .unwrap();
+    }
+    fn scan(service: &Service, at: u64) {
+        service.body_context(behavior::Context {
+            at,
+            unlocked: true,
+            ambient: true,
+            ..Default::default()
+        });
+        service
+            .files_with(
+                at,
+                || true,
+                |roots| {
+                    roots
+                        .iter()
+                        .map(|p| (p.clone(), file_watch::read(p)))
+                        .collect()
+                },
+            )
+            .unwrap();
+    }
+    #[test]
+    fn new_files_reach_scoped_preview_apply_undo_and_one_finite_notice_without_ai() {
+        let (s, root, folder, events) = fixture("roundtrip", "ask");
+        write(&folder, "old.txt");
+        let now = companion::now();
+        scan(&s, now);
+        write(&folder, "new.txt");
+        write(&folder, "unfinished.part");
+        write(&folder, "unknown.foo");
+        fs::create_dir(Path::new(&folder).join("directory.pdf")).unwrap();
+        scan(&s, now + 30_000);
+        scan(&s, now + 90_000);
+        let d = s.data.snapshot();
+        assert_eq!(d["watch"]["ready"].as_array().unwrap().len(), 1);
+        assert_eq!(d["watch"]["ready"][0]["name"], "new.txt");
+        assert!(s.deliver_suggestions(true).unwrap());
+        assert!(!s.deliver_suggestions(true).unwrap());
+        let bubbles: Vec<_> = events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(n, _)| n == "companion:bubble")
+            .cloned()
+            .collect();
+        assert_eq!(bubbles.len(), 1);
+        assert_eq!(bubbles[0].1["tab"], "files");
+        assert!(bubbles[0].1["until"].as_u64().unwrap() <= companion::now() + 12_000);
+        s.apply("watch:preview", json!({"folder":folder})).unwrap();
+        let plan = s.data.snapshot()["tidyPreview"].clone();
+        assert_eq!(plan["moves"].as_array().unwrap().len(), 1);
+        assert_eq!(plan["moves"][0]["name"], "new.txt");
+        s.apply("tidy:apply", json!({})).unwrap();
+        assert!(Path::new(&folder).join("old.txt").is_file());
+        assert!(Path::new(&folder).join("文档/new.txt").is_file());
+        assert!(s.data.snapshot()["watch"]["ready"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        scan(&s, now + 120_000); // Observe the absence before undo: it must not be new again.
+        s.apply("tidy:undo", json!({})).unwrap();
+        scan(&s, now + 150_000);
+        scan(&s, now + 210_000);
+        assert!(Path::new(&folder).join("new.txt").is_file());
+        assert!(s.data.snapshot()["watch"]["ready"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(s.tasks.list().is_empty());
+        assert!(s.background.list().is_empty());
+        s.shutdown();
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn off_on_during_a_read_revokes_the_old_lease_without_holding_runtime() {
+        let (s, root, folder, _) = fixture("lease", "ask");
+        let now = companion::now();
+        s.body_context(behavior::Context {
+            at: now,
+            unlocked: true,
+            ..Default::default()
+        });
+        assert!(!s
+            .files_with(
+                now,
+                || true,
+                |roots| {
+                    assert!(!s
+                        .files_with(now, || true, |_| panic!("overlapping read"))
+                        .unwrap());
+                    s.apply(
+                        "watch:set",
+                        json!({"enabled":false,"folders":[folder],"mode":"ask"}),
+                    )
+                    .unwrap();
+                    s.apply(
+                        "watch:set",
+                        json!({"enabled":true,"folders":[folder],"mode":"ask"}),
+                    )
+                    .unwrap();
+                    roots
+                        .iter()
+                        .map(|p| (p.clone(), file_watch::read(p)))
+                        .collect()
+                }
+            )
+            .unwrap());
+        assert_eq!(s.data.snapshot()["watch"]["seen"], json!({}));
+        assert!(!s.runtime.lock().unwrap().files.scanning);
+        scan(&s, now + 30_000);
+        assert!(s.data.snapshot()["watch"]["seen"].get(&folder).is_some());
+        s.shutdown();
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn locked_or_stale_context_never_reads_and_lock_during_read_discards_results() {
+        let (s, root, _, _) = fixture("locked", "ask");
+        let now = companion::now();
+        assert!(!s
+            .files_with(now, || true, |_| panic!("stale context read"))
+            .unwrap());
+        s.body_context(behavior::Context {
+            at: now,
+            unlocked: true,
+            ..Default::default()
+        });
+        assert!(!s
+            .files_with(now, || false, |_| panic!("locked read"))
+            .unwrap());
+        let calls = std::cell::Cell::new(0);
+        assert!(!s
+            .files_with(
+                now,
+                || {
+                    calls.set(calls.get() + 1);
+                    calls.get() == 1
+                },
+                |roots| roots
+                    .iter()
+                    .map(|p| (p.clone(), file_watch::read(p)))
+                    .collect()
+            )
+            .unwrap());
+        assert_eq!(s.data.snapshot()["watch"]["seen"], json!({}));
+        s.shutdown();
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn read_failures_keep_the_baseline_and_restart_keeps_handled_files() {
+        let (s, root, folder, _) = fixture("restart", "ask");
+        let now = companion::now();
+        scan(&s, now);
+        write(&folder, "new.txt");
+        scan(&s, now + 30_000);
+        let before = s.data.snapshot()["watch"].clone();
+        s.body_context(behavior::Context {
+            at: now + 60_000,
+            unlocked: true,
+            ..Default::default()
+        });
+        assert!(s
+            .files_with(
+                now + 60_000,
+                || true,
+                |roots| roots
+                    .iter()
+                    .map(|p| (p.clone(), Err("controlled read error".into())))
+                    .collect()
+            )
+            .unwrap());
+        assert_eq!(s.data.snapshot()["watch"], before);
+        assert!(s.snapshot()["files"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("controlled read error"));
+        s.shutdown();
+        let data = Companion::open(root.join("data.json"), None).unwrap();
+        let restarted = Service::new(
+            data,
+            TaskManager::ephemeral(Arc::new(|_| {})),
+            root.join("work"),
+            root.join("documents"),
+            Arc::new(|_, _| {}),
+        )
+        .unwrap();
+        scan(&restarted, now + 90_000);
+        assert_eq!(
+            restarted.data.snapshot()["watch"]["ready"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        restarted
+            .apply("watch:ignore", json!({"folder":folder}))
+            .unwrap();
+        scan(&restarted, now + 150_000);
+        assert!(restarted.data.snapshot()["watch"]["ready"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert!(restarted.data.snapshot()["inbox"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        restarted.shutdown();
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn automatic_moves_need_scope_consent_leave_old_files_and_preserve_manual_previews() {
+        let (s, root, folder, _) = fixture("auto", "ask");
+        let now = companion::now();
+        scan(&s, now);
+        s.apply("settings:set", json!({"rules":{"tidy":"auto"}}))
+            .unwrap();
+        write(&folder, "unconfirmed.txt");
+        scan(&s, now + 30_000);
+        scan(&s, now + 90_000);
+        assert!(Path::new(&folder).join("unconfirmed.txt").is_file());
+        s.apply(
+            "watch:set",
+            json!({"enabled":true,"folders":[folder],"mode":"auto"}),
+        )
+        .unwrap();
+        scan(&s, now + 120_000);
+        write(&folder, "new.txt");
+        fs::create_dir(Path::new(&folder).join("文档")).unwrap();
+        fs::write(
+            Path::new(&folder).join("文档/new.txt"),
+            b"existing destination",
+        )
+        .unwrap();
+        s.data
+            .change(|d| {
+                d["tidyPreview"] =
+                    json!({"at":now,"moves":[],"folder":"controlled manual preview"});
+                Ok(())
+            })
+            .unwrap();
+        scan(&s, now + 150_000);
+        scan(&s, now + 210_000);
+        assert!(Path::new(&folder).join("new.txt").is_file());
+        s.apply("tidy:cancel", json!({})).unwrap();
+        scan(&s, now + 240_000);
+        assert!(Path::new(&folder).join("文档/new (1).txt").is_file());
+        assert_eq!(
+            fs::read(Path::new(&folder).join("文档/new.txt")).unwrap(),
+            b"existing destination"
+        );
+        assert!(Path::new(&folder).join("unconfirmed.txt").is_file());
+        assert!(s.data.snapshot()["tidyPreview"].is_null());
+        scan(&s, now + 270_000);
+        s.apply("tidy:undo", json!({})).unwrap();
+        scan(&s, now + 300_000);
+        scan(&s, now + 360_000);
+        assert!(Path::new(&folder).join("new.txt").is_file());
+        s.shutdown();
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn automatic_failure_pauses_across_restart_without_losing_the_undo_journal() {
+        let (s, root, folder, _) = fixture("auto-fail", "auto");
+        let now = companion::now();
+        scan(&s, now);
+        write(&folder, "new.txt");
+        fs::write(Path::new(&folder).join("文档"), b"not a directory").unwrap();
+        scan(&s, now + 30_000);
+        scan(&s, now + 90_000);
+        assert!(Path::new(&folder).join("new.txt").is_file());
+        let before = s.data.snapshot();
+        assert!(!before["watch"]["native"]["autoError"]
+            .as_str()
+            .unwrap()
+            .is_empty());
+        let log = before["tidyLog"].clone();
+        fs::remove_file(Path::new(&folder).join("文档")).unwrap();
+        scan(&s, now + 150_000);
+        assert!(Path::new(&folder).join("new.txt").is_file());
+        assert_eq!(s.data.snapshot()["tidyLog"], log);
+        s.shutdown();
+        let restored = Companion::open(root.join("data.json"), None).unwrap();
+        assert_eq!(
+            restored.snapshot()["watch"]["native"]["autoError"],
+            before["watch"]["native"]["autoError"]
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn scoped_preview_rejects_changed_or_outside_sources() {
+        let (s, root, folder, _) = fixture("scoped", "ask");
+        let now = companion::now();
+        scan(&s, now);
+        write(&folder, "new.txt");
+        scan(&s, now + 30_000);
+        scan(&s, now + 90_000);
+        let selected = file_watch::selected(&s.data.snapshot(), &folder);
+        fs::write(Path::new(&folder).join("new.txt"), b"changed").unwrap();
+        assert!(utilities::tidy_selected(Path::new(&folder), &selected).is_err());
+        let mut outside = selected;
+        outside[0]["full"] = json!(root.join("outside.txt"));
+        assert!(utilities::tidy_selected(Path::new(&folder), &outside).is_err());
+        s.shutdown();
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn one_unavailable_folder_keeps_its_state_while_other_folders_continue() {
+        let (s, root, folder, _) = fixture("separate-folders", "ask");
+        fs::create_dir(root.join("second")).unwrap();
+        let second = fs::canonicalize(root.join("second"))
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        s.apply(
+            "watch:set",
+            json!({"enabled":true,"folders":[folder,second],"mode":"ask"}),
+        )
+        .unwrap();
+        write(&folder, "old.txt");
+        let now = companion::now();
+        scan(&s, now);
+        write(&second, "new.txt");
+        scan(&s, now + 30_000);
+        let baseline = s.data.snapshot()["watch"]["seen"][&folder].clone();
+        fs::rename(&folder, root.join("temporarily-offline")).unwrap();
+        scan(&s, now + 90_000);
+        let d = s.data.snapshot();
+        assert_eq!(d["watch"]["seen"][&folder], baseline);
+        assert_eq!(d["watch"]["ready"][0]["folder"], second);
+        assert!(!s.snapshot()["files"]["error"].as_str().unwrap().is_empty());
+        s.shutdown();
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn automatic_tidy_waits_for_focus_and_visible_presence_then_consumes_the_ready_batch() {
+        let (s, root, folder, _) = fixture("auto-focus", "auto");
+        let now = companion::now();
+        scan(&s, now);
+        write(&folder, "new.txt");
+        scan(&s, now + 30_000);
+        s.data
+            .change(|d| {
+                d["pomodoro"]["until"] = json!(now + 600_000);
+                Ok(())
+            })
+            .unwrap();
+        scan(&s, now + 90_000);
+        assert!(Path::new(&folder).join("new.txt").is_file());
+        s.apply("pomodoro:stop", json!({})).unwrap();
+        s.body_context(behavior::Context {
+            at: now + 120_000,
+            unlocked: true,
+            ambient: false,
+            ..Default::default()
+        });
+        s.files_with(
+            now + 120_000,
+            || true,
+            |roots| {
+                roots
+                    .iter()
+                    .map(|p| (p.clone(), file_watch::read(p)))
+                    .collect()
+            },
+        )
+        .unwrap();
+        assert!(Path::new(&folder).join("new.txt").is_file());
+        scan(&s, now + 150_000);
+        assert!(Path::new(&folder).join("文档/new.txt").is_file());
+        assert!(s.data.snapshot()["watch"]["ready"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        s.shutdown();
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
+    fn directory_and_category_links_are_never_followed_for_discovery_or_moves() {
+        use std::os::unix::fs::symlink;
+        let (s, root, folder, _) = fixture("links", "ask");
+        let now = companion::now();
+        scan(&s, now);
+        write(&folder, "new.txt");
+        fs::create_dir(root.join("outside")).unwrap();
+        symlink(root.join("outside"), Path::new(&folder).join("文档")).unwrap();
+        symlink(
+            root.join("data.json"),
+            Path::new(&folder).join("linked.pdf"),
+        )
+        .unwrap();
+        scan(&s, now + 30_000);
+        scan(&s, now + 90_000);
+        assert_eq!(
+            s.data.snapshot()["watch"]["ready"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(s.apply("watch:preview", json!({"folder":folder})).is_err());
+        assert!(fs::read_dir(root.join("outside")).unwrap().next().is_none());
+        let alias = root.join("alias");
+        symlink(&folder, &alias).unwrap();
+        assert!(file_watch::read(alias.to_str().unwrap()).is_err());
+        s.shutdown();
+        fs::remove_dir_all(root).unwrap();
     }
 }
 fn ambient_reason(d: &Value, context: behavior::Context, now: u64) -> Option<&'static str> {

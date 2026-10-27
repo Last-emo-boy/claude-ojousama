@@ -159,6 +159,11 @@ details.settings summary { cursor: pointer; width: fit-content; }
 #alert-list .companion-item { display: block; padding: 16px; background: #f3eee6; border: 0; border-radius: 12px; }
 #alert-list .quick-actions { margin: 12px 0 0; }
 #alert-list button { font-size: 12px; }
+#watch-ready .companion-item { display: block; padding: 16px 0; }
+#watch-ready .companion-item > div:first-child > p { font-weight: 600; }
+#watch-ready small { overflow-wrap: anywhere; }
+#watch-ready .companion-item > p { margin: 8px 0 0; }
+#watch-ready .quick-actions { margin: 10px 0 0; }
 .quick-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 14px 0; }
 .quick-actions input[type="number"] { width: 80px; }
 .inline-compose { display: flex; gap: 8px; flex-wrap: wrap; }

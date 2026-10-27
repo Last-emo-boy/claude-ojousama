@@ -2,6 +2,24 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { isActive, orderedTasks, upsertTask, currentTask, selectedTask, presentation, settingsFrom, pendingKey, alphaBands, placeBands, mirrorBands } from './model.mjs'
 import { createDragQueue } from './drag.mjs'
+import { watchPayload, fileGroups, watchStatus } from './files.mjs'
+
+test('folder watch uses explicit commands and preserves null default-folder and mode meaning', () => {
+  assert.deepEqual(watchPayload({enabled:false,folders:' ',mode:'ask'}),{enabled:false,folders:null,mode:'ask'})
+  assert.deepEqual(watchPayload({enabled:true,folders:'/fixture/a\r\n /fixture/b \n/fixture/a',mode:'auto'}),{enabled:true,folders:['/fixture/a','/fixture/b'],mode:'auto'})
+  assert.deepEqual(fileGroups([{folder:'/a',name:'one.txt'},{folder:'/b',name:'two.txt'},{folder:'/a',name:'three.txt'}]).map(g=>[g.folder,g.files.length]),[['/a',2],['/b',1]])
+})
+test('watch status distinguishes disabled imports, read errors, auto consent and paused recovery', () => {
+  const d={settings:{rules:{tidy:'auto'}},watch:{native:{enabled:false,consentVersion:0}}}
+  assert.equal(watchStatus(d),'文件发现未开启')
+  d.watch.native={enabled:true,consentVersion:1,autoRoots:null}
+  assert.match(watchStatus(d),/重新确认/)
+  d.watch.native.autoRoots=['/fixture'];assert.match(watchStatus(d),/自动分类/)
+  assert.equal(watchStatus(d,{error:'read failed'}),'read failed')
+  assert.match(watchStatus(d,{pauseReason:'session-unavailable'}),/已暂停/)
+  d.watch.native.autoError='自动整理已暂停';assert.equal(watchStatus(d),d.watch.native.autoError)
+  d.watch.native.autoError='';d.settings.rules.tidy='ask';assert.match(watchStatus(d),/确认前不移动/)
+})
 
 const task = (id, status = 'completed', createdAt = id) => ({ id, status, createdAt, activity: '', error: null })
 

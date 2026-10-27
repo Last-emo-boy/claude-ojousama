@@ -125,7 +125,7 @@ test('bubble actions reach the current intent, not the last panel tab', () => {
   assert.deepEqual(bubbleAction({source:'task',taskId:7}),{command:'show_panel',args:{tab:'tasks',taskId:7},label:'查看任务'})
   assert.equal(bubbleAction({source:'alert'}).args.tab,'todos')
   assert.deepEqual(bubbleAction({source:'clipboard',token:9}),{command:'clipboard_offer_open',args:{token:9,action:'preview'},label:'看看文字'})
-  for(const [tab,label]of [['goals','查看目标'],['growth','看看成长'],['activity','查看动态']]) {
+  for(const [tab,label]of [['goals','查看目标'],['growth','看看成长'],['activity','查看动态'],['files','看看文件']]) {
     const state=createBubbleState();state.speak({text:'有新结果',tab,until:12000},0)
     assert.equal(bubbleAction(state.read(1)).args.tab,tab)
     assert.equal(bubbleAction(state.read(1)).label,label)

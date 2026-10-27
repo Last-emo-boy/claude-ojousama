@@ -29,6 +29,9 @@ pub fn defaults() -> Value {
     data["settings"]["crossScreens"] = json!(true);
     data["settings"]["motionPausedUntil"] = json!(0);
     data["settings"]["clipboardWatchConsent"] = json!(0);
+    data["watch"]["ready"] = json!([]);
+    data["watch"]["native"] =
+        json!({"enabled":false,"consentVersion":0,"autoRoots":null,"autoError":""});
     data
 }
 pub fn save(path: &Path, data: &Value) -> Result<(), String> {

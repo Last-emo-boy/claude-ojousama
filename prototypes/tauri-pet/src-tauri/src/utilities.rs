@@ -58,7 +58,7 @@ pub fn update() -> Result<Value, String> {
         json!({"version":value["tag_name"],"url":value["html_url"],"notes":value["body"],"publishedAt":value["published_at"]}),
     )
 }
-fn category(name: &str) -> Option<&'static str> {
+pub(crate) fn category(name: &str) -> Option<&'static str> {
     let ext = Path::new(name).extension()?.to_str()?.to_lowercase();
     for (name,extensions) in [
         ("图片","jpg jpeg png gif webp bmp svg heic heif ico tif tiff avif psd"),("文档","pdf doc docx xls xlsx ppt pptx txt md csv rtf odt ods odp epub pages key numbers"),("压缩包","zip rar 7z tar gz bz2 xz tgz zst"),("安装包","exe msi msix msixbundle appx dmg pkg apk iso"),("视频","mp4 mkv mov avi wmv flv webm m4v"),("音乐","mp3 wav flac aac ogg m4a wma opus"),("代码","js ts jsx tsx py java c cpp h hpp cs go rs json yml yaml xml html css ipynb sql sh ps1 bat")]{
@@ -67,13 +67,48 @@ fn category(name: &str) -> Option<&'static str> {
     None
 }
 pub fn tidy_plan(folder: &Path) -> Result<Value, String> {
+    plan(folder, None)
+}
+pub fn tidy_selected(folder: &Path, files: &[Value]) -> Result<Value, String> {
+    plan(folder, Some(files))
+}
+fn plan(folder: &Path, selected: Option<&[Value]>) -> Result<Value, String> {
     let folder = fs::canonicalize(folder).map_err(|e| e.to_string())?;
     let mut moves = Vec::new();
     let mut taken = HashSet::new();
-    for entry in fs::read_dir(&folder).map_err(|e| e.to_string())?.take(2000) {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let file = entry.path();
+    let files = if let Some(selected) = selected {
+        selected
+            .iter()
+            .map(|v| {
+                let file = PathBuf::from(v["full"].as_str().ok_or("新文件路径无效")?);
+                if file.parent() != Some(folder.as_path())
+                    || file.file_name().and_then(|s| s.to_str()) != v["name"].as_str()
+                {
+                    return Err("新文件路径已变化，请刷新列表".to_string());
+                }
+                Ok((file, Some(v)))
+            })
+            .collect::<Result<Vec<_>, String>>()?
+    } else {
+        fs::read_dir(&folder)
+            .map_err(|e| e.to_string())?
+            .take(2000)
+            .map(|e| e.map(|e| (e.path(), None)).map_err(|e| e.to_string()))
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    for (file, record) in files {
         let meta = fs::symlink_metadata(&file).map_err(|e| e.to_string())?;
+        let modified = meta
+            .modified()
+            .map_err(|e| e.to_string())?
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        if let Some(record) = record {
+            if !meta.is_file() || record["size"] != meta.len() || record["modified"] != modified {
+                return Err("新文件已变化，请等待列表刷新后再预览".into());
+            }
+        }
         if !meta.is_file()
             || meta
                 .modified()
@@ -84,7 +119,12 @@ pub fn tidy_plan(folder: &Path) -> Result<Value, String> {
         {
             continue;
         }
-        let name = entry.file_name().to_string_lossy().into_owned();
+        let name = file
+            .file_name()
+            .ok_or("文件名无效")?
+            .to_str()
+            .ok_or("文件名不能表示为 Unicode")?
+            .to_owned();
         if name.starts_with('.') || name.starts_with("~$") {
             continue;
         }
@@ -206,6 +246,16 @@ fn move_exclusive(from: &Path, to: &Path) -> Result<(), String> {
 pub fn tidy_apply(data: &Companion) -> Result<Value, String> {
     let d = data.snapshot();
     let plan = d["tidyPreview"].clone();
+    let result = tidy_apply_plan(data, &plan)?;
+    data.change(|d| {
+        if d["tidyPreview"] == plan {
+            d["tidyPreview"] = Value::Null;
+        }
+        Ok(())
+    })?;
+    Ok(result)
+}
+pub fn tidy_apply_plan(data: &Companion, plan: &Value) -> Result<Value, String> {
     if companion::now().saturating_sub(plan["at"].as_u64().unwrap_or(0)) > 600_000 {
         return Err("整理预览已过期，请重新预览".into());
     }
@@ -228,7 +278,8 @@ pub fn tidy_apply(data: &Companion) -> Result<Value, String> {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u64;
-        if meta.len() != movement["size"].as_u64().unwrap_or(u64::MAX)
+        if !meta.is_file()
+            || meta.len() != movement["size"].as_u64().unwrap_or(u64::MAX)
             || modified != movement["modified"].as_u64().unwrap_or(u64::MAX)
         {
             return Err(format!("文件已变化，未移动：{}", from.display()));
@@ -255,10 +306,6 @@ pub fn tidy_apply(data: &Companion) -> Result<Value, String> {
             Ok(())
         })?;
     }
-    data.change(|d| {
-        d["tidyPreview"] = Value::Null;
-        Ok(())
-    })?;
     Ok(json!(completed))
 }
 pub fn tidy_undo(data: &Companion) -> Result<Value, String> {
@@ -272,6 +319,7 @@ pub fn tidy_undo(data: &Companion) -> Result<Value, String> {
             left.pop();
             data.change(|d| {
                 d["tidyLog"]["moves"] = json!(left);
+                crate::file_watch::restored(d, movement);
                 Ok(())
             })?;
             continue;
@@ -280,6 +328,7 @@ pub fn tidy_undo(data: &Companion) -> Result<Value, String> {
         left.pop();
         data.change(|d| {
             d["tidyLog"]["moves"] = json!(left);
+            crate::file_watch::restored(d, movement);
             Ok(())
         })?;
     }

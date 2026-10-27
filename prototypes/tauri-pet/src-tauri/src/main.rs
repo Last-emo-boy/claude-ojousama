@@ -9,6 +9,7 @@ mod clipboard_watch;
 mod companion;
 mod desktop;
 mod desktop_entry;
+mod file_watch;
 mod growth;
 mod motion;
 mod observer;
@@ -407,6 +408,27 @@ async fn choose_workspace(
     .map_err(|e| e.to_string())?
 }
 #[tauri::command]
+async fn choose_folder(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+) -> Result<Option<String>, String> {
+    panel_only(&window)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_title("选择要整理或关注的文件夹")
+            .blocking_pick_folder()
+            .map(|p| {
+                p.into_path()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .map_err(|e| e.to_string())
+            })
+            .transpose()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
 fn task_start(
     window: WebviewWindow,
     state: tauri::State<State>,
@@ -585,6 +607,36 @@ async fn companion_command(
                 .unwrap_or("read-only")
                 .to_string();
             confirm_permission(window.app_handle().clone(), &previous, permission).await?;
+        }
+    }
+    if command == "watch:set" && args["enabled"] == true && args["mode"] == "auto" {
+        let app = window.app_handle().clone();
+        let scope = if args["folders"].is_null() {
+            "系统下载文件夹".to_string()
+        } else {
+            args["folders"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_default()
+        };
+        let message=format!("大小姐会自动把这些文件夹中新出现、已稳定的文件移到同目录的分类文件夹中：\n{scope}\n\n不读取文件内容，不调用 AI，不覆盖现有文件。可撤销上次整理；此权限独立于 AI 任务权限。是否开启？");
+        let allowed = tauri::async_runtime::spawn_blocking(move || {
+            app.dialog()
+                .message(message)
+                .title("开启自动整理新文件")
+                .kind(tauri_plugin_dialog::MessageDialogKind::Warning)
+                .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancel)
+                .blocking_show()
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+        if !allowed {
+            return Err("未开启自动整理，原设置保持不变".into());
         }
     }
     let service = state.service.clone();
@@ -1612,7 +1664,8 @@ fn main() {
                 Arc::new(move |name, payload| {
                     let _ = handle.emit(name, payload);
                 }),
-            )?;
+            )?
+            .with_download_folder(app.path().download_dir().map_err(|e| e.to_string()));
             let service_loop = service.clone();
             let service_stop = stop.clone();
             std::thread::spawn(move || {
@@ -1716,6 +1769,7 @@ fn main() {
             quit_app,
             save_settings,
             choose_workspace,
+            choose_folder,
             task_start,
             task_retry,
             task_cancel,
