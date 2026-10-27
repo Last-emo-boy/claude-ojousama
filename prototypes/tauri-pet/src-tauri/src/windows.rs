@@ -352,6 +352,73 @@ pub fn visible(_scale: f64) -> Result<Vec<WindowRect>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn native_x11_reports_real_frame_geometry_move_and_unmap() {
+        use std::time::{Duration, Instant};
+        use x11rb::{
+            connection::Connection,
+            protocol::xproto::{ConfigureWindowAux, ConnectionExt, CreateWindowAux, WindowClass},
+            COPY_DEPTH_FROM_PARENT,
+        };
+        let (connection, screen) = x11rb::connect(None)
+            .expect("native Linux tests require Xvfb and an EWMH window manager");
+        let root = connection.setup().roots[screen].root;
+        let id = connection.generate_id().unwrap();
+        connection
+            .create_window(
+                COPY_DEPTH_FROM_PARENT,
+                id,
+                root,
+                180,
+                180,
+                420,
+                260,
+                0,
+                WindowClass::INPUT_OUTPUT,
+                0,
+                &CreateWindowAux::new().background_pixel(0xeeeeee),
+            )
+            .unwrap()
+            .check()
+            .unwrap();
+        connection.map_window(id).unwrap().check().unwrap();
+        connection.flush().unwrap();
+        let wait = |expected: bool, old: Option<(f64, f64)>| {
+            let start = Instant::now();
+            loop {
+                let windows = visible(1.0).unwrap();
+                let found = windows.into_iter().find(|w| w.id == id as u64);
+                if found.is_some() == expected
+                    && old.is_none_or(|(x, y)| {
+                        found
+                            .as_ref()
+                            .is_some_and(|w| (w.x - x).abs() > 10.0 || (w.y - y).abs() > 10.0)
+                    })
+                {
+                    break found;
+                }
+                assert!(
+                    start.elapsed() < Duration::from_secs(4),
+                    "window manager did not report the expected geometry"
+                );
+                std::thread::sleep(Duration::from_millis(30));
+            }
+        };
+        let first = wait(true, None).unwrap();
+        assert!(first.width >= 420.0 && first.height >= 260.0);
+        connection
+            .configure_window(id, &ConfigureWindowAux::new().x(360).y(310))
+            .unwrap()
+            .check()
+            .unwrap();
+        connection.flush().unwrap();
+        wait(true, Some((first.x, first.y)));
+        connection.unmap_window(id).unwrap().check().unwrap();
+        connection.flush().unwrap();
+        wait(false, None);
+        connection.destroy_window(id).unwrap().check().unwrap();
+    }
     #[test]
     fn a_closed_moved_resized_or_covered_window_releases_its_seat() {
         let original = seats(&[rect(7, 50.0, 400.0, 800.0, 500.0)], 1.0).remove(0);
