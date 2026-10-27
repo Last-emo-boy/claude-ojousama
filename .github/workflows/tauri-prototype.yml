@@ -3,9 +3,9 @@ name: Tauri prototype
 on:
   push:
     branches: [main, 'codex/**']
-    paths: ['prototypes/tauri-pet/**', 'assets/sprites/**', 'assets/icon-256.png', '.github/workflows/tauri-prototype.yml']
+    paths: ['prototypes/tauri-pet/**', 'assets/sprites/**', 'assets/icon-256.png', 'assets/companion-defaults.json', 'assets/observation-policy.json', '.github/workflows/tauri-prototype.yml']
   pull_request:
-    paths: ['prototypes/tauri-pet/**', 'assets/sprites/**', 'assets/icon-256.png', '.github/workflows/tauri-prototype.yml']
+    paths: ['prototypes/tauri-pet/**', 'assets/sprites/**', 'assets/icon-256.png', 'assets/companion-defaults.json', 'assets/observation-policy.json', '.github/workflows/tauri-prototype.yml']
   workflow_dispatch:
 
 permissions:
@@ -47,7 +47,7 @@ jobs:
           cache-dependency-path: prototypes/tauri-pet/package-lock.json
       - name: Install Linux desktop dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb xauth openbox
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb xauth openbox libpipewire-0.3-dev libxcb-randr0-dev libgbm-dev libegl1-mesa-dev libclang-dev
       - name: Set up Rust stable
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt

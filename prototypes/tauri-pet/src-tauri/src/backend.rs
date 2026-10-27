@@ -29,6 +29,11 @@ pub struct StartRequest {
     pub permission: String,
     pub codex_path: String,
     pub model: String,
+    pub session_id: String,
+    pub instructions: String,
+    pub restricted: bool,
+    #[serde(skip)]
+    pub image: Option<String>,
 }
 impl Default for StartRequest {
     fn default() -> Self {
@@ -38,6 +43,10 @@ impl Default for StartRequest {
             permission: "read-only".into(),
             codex_path: String::new(),
             model: String::new(),
+            session_id: String::new(),
+            instructions: String::new(),
+            restricted: false,
+            image: None,
         }
     }
 }
@@ -77,7 +86,7 @@ struct State {
 }
 struct Shared {
     state: Mutex<State>,
-    history: PathBuf,
+    history: Option<PathBuf>,
     emit: Emit,
     question_timeout: Duration,
 }
@@ -184,7 +193,24 @@ impl TaskManager {
                     next_id,
                     load_error,
                 }),
-                history,
+                history: Some(history),
+                emit,
+                question_timeout: QUESTION_TIMEOUT,
+            }),
+            launch_override: None,
+        }
+    }
+
+    pub fn ephemeral(emit: Emit) -> Self {
+        Self {
+            shared: Arc::new(Shared {
+                state: Mutex::new(State {
+                    records: Vec::new(),
+                    active: None,
+                    next_id: 1,
+                    load_error: None,
+                }),
+                history: None,
                 emit,
                 question_timeout: QUESTION_TIMEOUT,
             }),
@@ -204,6 +230,9 @@ impl TaskManager {
     }
 
     pub fn start(&self, mut request: StartRequest) -> Result<TaskView, String> {
+        if request.restricted {
+            request.permission = "read-only".into();
+        }
         request.prompt = request.prompt.trim().into();
         if request.prompt.is_empty() {
             return Err("请先输入任务".into());
@@ -365,10 +394,13 @@ impl TaskManager {
 
 impl Shared {
     fn persist(&self, records: &[Record]) -> Result<(), String> {
-        if let Some(parent) = self.history.parent() {
+        let Some(history) = &self.history else {
+            return Ok(());
+        };
+        if let Some(parent) = history.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("无法创建任务历史目录：{e}"))?;
         }
-        let temp = self.history.with_extension("json.tmp");
+        let temp = history.with_extension("json.tmp");
         fs::write(
             &temp,
             serde_json::to_vec(records).map_err(|e| e.to_string())?,
@@ -380,7 +412,7 @@ impl Shared {
             fs::set_permissions(&temp, fs::Permissions::from_mode(0o600))
                 .map_err(|e| format!("无法保护任务历史：{e}"))?;
         }
-        replace_history(&temp, &self.history).map_err(|e| format!("无法更新任务历史：{e}"))
+        replace_history(&temp, history).map_err(|e| format!("无法更新任务历史：{e}"))
     }
 
     fn update(&self, id: u64, change: impl FnOnce(&mut TaskView)) {
@@ -425,6 +457,7 @@ impl Shared {
             }
             view.pending = None;
             view.finished_at = Some(now_ms());
+            record.request.image = None;
             state.active = None;
             if let Err(error) = self.persist(&state.records) {
                 let record = state.records.iter_mut().find(|r| r.view.id == id).unwrap();
@@ -665,7 +698,7 @@ fn native_target() -> &'static str {
     }
 }
 
-fn run_config() -> BTreeMap<String, Value> {
+fn run_config(restricted: bool) -> BTreeMap<String, Value> {
     let mut config = BTreeMap::new();
     config.insert("notify".into(), json!([]));
     config.insert("project_doc_max_bytes".into(), json!(0));
@@ -691,6 +724,10 @@ fn run_config() -> BTreeMap<String, Value> {
         "goals",
     ] {
         config.insert(format!("features.{feature}"), json!(false));
+    }
+    if restricted {
+        config.insert("features.shell_tool".into(), json!(false));
+        config.insert("features.view_image".into(), json!(false));
     }
     config
 }
@@ -721,7 +758,7 @@ fn run_task(
     command
         .args(&launch.args)
         .args(["app-server", "--listen", "stdio://"]);
-    for (key, value) in run_config() {
+    for (key, value) in run_config(request.restricted) {
         command.arg("-c").arg(format!("{key}={value}"));
     }
     command
@@ -1009,7 +1046,8 @@ impl Session {
                     self.phase = Phase::Config;
                 }
                 Phase::Config => {
-                    let mut config = serde_json::to_value(run_config()).unwrap();
+                    let mut config =
+                        serde_json::to_value(run_config(self.request.restricted)).unwrap();
                     let servers = result["config"]["mcp_servers"]
                         .as_object()
                         .map(|servers| {
@@ -1021,10 +1059,23 @@ impl Session {
                         .unwrap_or_default();
                     config["mcp_servers"] = Value::Object(servers);
                     let mut params = json!({"cwd":self.request.workspace,"sandbox":self.request.permission,"approvalPolicy":"on-request","config":config,"developerInstructions":"You are a concise desktop task assistant. Work on the user's explicit request in the selected workspace. Ask for approval when required. Do not claim to have executed actions that have not completed."});
+                    if !self.request.instructions.is_empty() {
+                        params["developerInstructions"] = json!(self.request.instructions);
+                    }
+                    if self.request.restricted {
+                        params["approvalPolicy"] = json!("never");
+                        params["environments"] = json!([]);
+                        params["ephemeral"] = json!(true);
+                    }
                     if !self.request.model.trim().is_empty() {
                         params["model"] = json!(self.request.model);
                     }
-                    rpc(stdin, 3, "thread/start", params)?;
+                    if !self.request.session_id.is_empty() && !self.request.restricted {
+                        params["threadId"] = json!(self.request.session_id);
+                        rpc(stdin, 3, "thread/resume", params)?;
+                    } else {
+                        rpc(stdin, 3, "thread/start", params)?;
+                    }
                     self.phase = Phase::Thread;
                 }
                 Phase::Thread => {
@@ -1038,12 +1089,16 @@ impl Session {
                         v.status = "thinking".into();
                         v.activity = "思考中…".into();
                     });
-                    rpc(
-                        stdin,
-                        4,
-                        "turn/start",
-                        json!({"threadId":thread_id,"input":[{"type":"text","text":self.request.prompt,"text_elements":[]}]}),
-                    )?;
+                    let mut input =
+                        vec![json!({"type":"text","text":self.request.prompt,"text_elements":[]})];
+                    if let Some(image) = &self.request.image {
+                        input.push(json!({"type":"image","url":image}));
+                    }
+                    let mut turn = json!({"threadId":thread_id,"input":input});
+                    if self.request.restricted {
+                        turn["environments"] = json!([]);
+                    }
+                    rpc(stdin, 4, "turn/start", turn)?;
                     self.phase = Phase::Turn;
                 }
                 Phase::Turn => {
@@ -1087,6 +1142,22 @@ impl Session {
             "item/started" | "item/completed" => {
                 let item = &params["item"];
                 let completed = method == "item/completed";
+                if self.request.restricted
+                    && !completed
+                    && matches!(
+                        item["type"].as_str(),
+                        Some(
+                            "commandExecution"
+                                | "fileChange"
+                                | "mcpToolCall"
+                                | "dynamicToolCall"
+                                | "webSearch"
+                                | "computerUse"
+                        )
+                    )
+                {
+                    return Err("观察会话请求了未授权的工具，已停止".into());
+                }
                 match item["type"].as_str().unwrap_or("") {
                     "reasoning" => self.activity("thinking", "思考中…"),
                     "agentMessage" if completed => self.text(
@@ -1217,7 +1288,7 @@ impl Session {
                 | "item/permissions/requestApproval"
                 | "item/tool/requestUserInput"
         ) {
-            if self.cancelled {
+            if self.cancelled || self.request.restricted {
                 return send(stdin, json!({"id":id,"result":declined(&method)}));
             }
             if self.pending.iter().any(|pending| pending.id == id) {

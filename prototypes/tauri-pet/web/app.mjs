@@ -1,5 +1,6 @@
 import { isActive, orderedTasks, upsertTask, currentTask, selectedTask, presentation, settingsFrom, pendingKey, alphaBands, placeBands } from './model.mjs'
 import { createDragQueue } from './drag.mjs'
+import { mountCompanion } from './companion.mjs'
 
 const app = document.querySelector('#app')
 const view = new URLSearchParams(location.search).get('view') === 'panel' ? 'panel' : 'pet'
@@ -17,6 +18,8 @@ const state = {
   submitting: false,
   historyKey: '',
 }
+let companionPanel
+let companionBubble = null
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)')
 const invoke = (command, args) => window.__TAURI__.core.invoke(command, args)
 const $ = id => document.getElementById(id)
@@ -34,7 +37,7 @@ function element(tag, className, text) {
 
 function showError(error) {
   state.error = errorText(error)
-  const output = $(view === 'pet' ? 'pet-error' : 'form-error')
+  const output = $(view === 'pet' ? 'pet-error' : 'panel-error')
   if (output) output.textContent = state.error
   if (view === 'pet') sendHitRegions()
 }
@@ -59,6 +62,7 @@ function acceptTask(task, { select = false, snapshot = false } = {}) {
   state.tasks = upsertTask(state.tasks, task, { snapshot })
   if (select || state.selected === null) state.selected = task.id
   render()
+  companionPanel?.taskUpdated(state.tasks)
 }
 
 function render() {
@@ -72,6 +76,8 @@ let animationFrame = 0
 let spriteBands = []
 let lastRegions = ''
 let sheets = {}
+let definitions = {}
+let loading = new Map()
 let spriteContext
 const SPRITE_SCALE = 1.35
 const CANVAS_SIZE = 180
@@ -159,8 +165,14 @@ async function loadSprites() {
   const response = await fetch('./assets/sprites/manifest.json')
   if (!response.ok) throw new Error('角色资源未准备好，请重新构建原型')
   const manifest = await response.json()
-  await Promise.all(['idle', 'thinking', 'typing', 'dangle', 'happy', 'error', 'wave', 'sit'].map(async name => {
-    const definition = manifest.anims[name]
+  definitions = manifest.anims
+  await Promise.all(['idle', 'thinking', 'typing', 'dangle', 'happy', 'error', 'wave', 'sit'].map(loadSheet))
+}
+async function loadSheet(name) {
+  if (sheets[name]) return
+  if (loading.has(name)) return loading.get(name)
+  const task = (async () => {
+    const definition = definitions[name]
     if (!definition) throw new Error(`缺少角色动作：${name}`)
     const image = new Image()
     await new Promise((resolve, reject) => {
@@ -176,16 +188,19 @@ async function loadSprites() {
     const pixels = context.getImageData(0, 0, image.width, image.height).data
     const bands = Array.from({ length: definition.frames }, (_, frame) => alphaBands(pixels, image.width, frame, definition.w, definition.h))
     sheets[name] = { image, bands, ...definition }
-  }))
+  })()
+  loading.set(name, task)
+  try { await task } finally { loading.delete(name) }
 }
 
 function drawSprite() {
   clearTimeout(animationTimer)
   if (document.hidden || !spriteContext) return
   const task = currentTask(state.tasks)
-  const name = presentation(task, state.motion.phase).animation
+  const base = presentation(task, state.motion.phase)
+  const name = !base.active && !['dragging','flying','perched'].includes(state.motion.phase) && companionBubble?.until > Date.now() ? companionBubble.animation : base.animation
   const sheet = sheets[name]
-  if (!sheet) return
+  if (!sheet) { loadSheet(name).then(drawSprite).catch(showError); return }
   if (activeAnimation !== name) {
     activeAnimation = name
     animationFrame = 0
@@ -226,7 +241,7 @@ function renderPet() {
   const task = currentTask(state.tasks)
   const info = presentation(task, state.motion.phase)
   renderStatus($('pet-status'), task)
-  $('pet-message').textContent = short(info.text, 105)
+  $('pet-message').textContent = short(companionBubble?.until > Date.now() && !info.active ? companionBubble.text : info.text, 105)
   $('pet-error').textContent = state.error
   $('pet-bubble').classList.toggle('has-error', !!state.error)
   $('pet-stop').classList.toggle('hidden', !info.active)
@@ -242,9 +257,10 @@ function renderPet() {
 function mountPanel() {
   app.innerHTML = `
     <header class="panel-header">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><h1>Ojousama Lite<span class="prototype">轻量原型</span></h1></div>
+      <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><h1>Claude Ojousama</h1></div>
       <div class="header-actions"><button id="show-pet" class="subtle" type="button">回到桌宠</button></div>
     </header>
+    <p id="panel-error" class="error" role="alert"></p>
     <form id="task-form" class="new-task">
       <label class="section-label" for="prompt">这次做什么？</label>
       <textarea id="prompt" placeholder="看看这个项目，或者帮我完成一件事…" required maxlength="20000" spellcheck="false"></textarea>
@@ -279,7 +295,7 @@ function mountPanel() {
         <pre id="detail-output" class="output" aria-label="任务结果"></pre>
       </article>
     </section>
-    <footer class="panel-footnote"><span id="platform-note"></span><button id="quit-app" type="button">退出原型</button></footer>`
+    <footer class="panel-footnote"><span id="platform-note"></span><button id="quit-app" type="button">退出大小姐</button></footer>`
   $('task-form').addEventListener('submit', startTask)
   $('choose-workspace').addEventListener('click', event => action(event.currentTarget, async () => {
     const path = await invoke('choose_workspace')
@@ -499,7 +515,7 @@ function renderQuestions(task, container) {
 async function boot() {
   if (view === 'pet') mountPet()
   else mountPanel()
-  if (!window.__TAURI__) throw new Error('请从 Ojousama Lite 应用打开这个界面')
+  if (!window.__TAURI__) throw new Error('请从 Claude Ojousama 应用打开这个界面')
   await window.__TAURI__.event.listen('task:update', event => acceptTask(event.payload))
   if (view === 'pet') {
     await window.__TAURI__.event.listen('pet:error', event => showError(event.payload))
@@ -517,6 +533,16 @@ async function boot() {
   state.positionable = initial.positionable !== false
   state.platform = initial.platform
   state.motion = initial.motion || state.motion
+  if (view === 'panel' && initial.companion) {
+    companionPanel = mountCompanion({invoke, initial: initial.companion, showError, onTasks: () => companionPanel.select('tasks')})
+    await window.__TAURI__.event.listen('companion:update', event => companionPanel.update(event.payload))
+  } else if (view === 'pet') {
+    await window.__TAURI__.event.listen('companion:bubble', event => {
+      companionBubble = event.payload
+      renderPet()
+      setTimeout(() => renderPet(), Math.max(0, companionBubble.until - Date.now()))
+    })
+  }
   if (view === 'panel') {
     $('workspace').value = state.settings.workspace
     $('permission').value = state.settings.permission

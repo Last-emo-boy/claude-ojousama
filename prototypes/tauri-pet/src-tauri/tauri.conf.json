@@ -3,22 +3,57 @@
   "productName": "Ojousama Lite",
   "version": "0.1.0",
   "identifier": "dev.ojousama.lite.prototype",
-  "build": { "frontendDist": "../web" },
+  "build": {
+    "frontendDist": "../web"
+  },
   "app": {
     "withGlobalTauri": true,
     "macOSPrivateApi": true,
     "windows": [],
     "security": {
       "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost; style-src 'self'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'",
-      "capabilities": [{ "identifier": "prototype", "windows": ["pet", "panel"], "permissions": ["core:default"] }]
+      "capabilities": [
+        {
+          "identifier": "prototype",
+          "windows": [
+            "pet",
+            "panel",
+            "note"
+          ],
+          "permissions": [
+            "core:default"
+          ]
+        }
+      ]
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.png", "icons/icon.ico"],
-    "macOS": { "minimumSystemVersion": "12.0", "signingIdentity": "-" },
-    "linux": { "deb": { "depends": ["libwebkit2gtk-4.1-0", "libayatana-appindicator3-1"] } },
-    "windows": { "nsis": { "displayLanguageSelector": true, "languages": ["SimpChinese", "English"] } }
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "signingIdentity": "-"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libayatana-appindicator3-1"
+        ]
+      }
+    },
+    "windows": {
+      "nsis": {
+        "displayLanguageSelector": true,
+        "languages": [
+          "SimpChinese",
+          "English"
+        ]
+      }
+    }
   }
 }

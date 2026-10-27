@@ -1,7 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod backend;
+mod companion;
 mod motion;
+mod observer;
+mod service;
 mod windows;
 
 use backend::{StartRequest, TaskManager, TaskView};
@@ -73,6 +76,7 @@ struct Rect {
 
 struct State {
     tasks: TaskManager,
+    service: service::Service,
     settings: Mutex<Settings>,
     settings_path: PathBuf,
     motion: Arc<Mutex<Motion>>,
@@ -103,7 +107,7 @@ fn quit_app(app: tauri::AppHandle) {
 fn bootstrap(state: tauri::State<State>) -> Value {
     json!({ "platform":std::env::consts::OS, "positionable":state.positionable,
         "tasks":state.tasks.list(), "settings":*state.settings.lock().unwrap(),
-        "motion":*state.motion.lock().unwrap() })
+        "motion":*state.motion.lock().unwrap(), "companion":state.service.snapshot() })
 }
 
 fn panel_only(window: &WebviewWindow) -> Result<(), String> {
@@ -133,6 +137,7 @@ fn save_settings(
         std::fs::remove_file(&state.settings_path).map_err(|e| e.to_string())?;
     }
     std::fs::rename(temporary, &state.settings_path).map_err(|e| e.to_string())?;
+    state.service.apply("settings:set",json!({"cwd":settings.workspace,"permission":settings.permission,"codexExe":settings.codex_path,"codexModel":settings.model}))?;
     *state.settings.lock().unwrap() = settings;
     Ok(())
 }
@@ -200,6 +205,137 @@ fn task_answer(
 ) -> Result<(), String> {
     panel_only(&window)?;
     state.tasks.answer(id, request_id, answers)
+}
+
+#[tauri::command]
+fn note_toggle(app: tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<State>();
+    if let Some(note) = app.get_webview_window("note") {
+        if note.is_visible().map_err(|e| e.to_string())? {
+            note.hide().map_err(|e| e.to_string())?;
+        } else {
+            note.show().map_err(|e| e.to_string())?;
+        }
+    } else {
+        let data = state.service.data.snapshot();
+        let note = WebviewWindowBuilder::new(&app, "note", WebviewUrl::App("note.html".into()))
+            .title("今天的小事")
+            .inner_size(270.0, 360.0)
+            .min_inner_size(220.0, 180.0)
+            .always_on_top(data["note"]["pinned"] != false)
+            .build()
+            .map_err(|e| e.to_string())?;
+        if let (Some(x), Some(y)) = (data["note"]["x"].as_f64(), data["note"]["y"].as_f64()) {
+            note.set_position(PhysicalPosition::new(x as i32, y as i32))
+                .map_err(|e| e.to_string())?;
+        }
+        let service = state.service.clone();
+        let win = note.clone();
+        note.on_window_event(move |event| {
+            if let tauri::WindowEvent::Moved(pos) = event {
+                if let Err(e) = service.data.change(|d| {
+                    d["note"]["x"] = json!(pos.x);
+                    d["note"]["y"] = json!(pos.y);
+                    Ok(())
+                }) {
+                    eprintln!("note position: {e}");
+                }
+            } else if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = win.hide();
+            }
+        });
+    }
+    if let Some(note) = app.get_webview_window("note") {
+        let open = note.is_visible().map_err(|e| e.to_string())?;
+        state.service.data.change(|d| {
+            d["note"]["open"] = json!(open);
+            Ok(())
+        })?;
+    }
+    Ok(())
+}
+#[tauri::command]
+fn note_update(
+    window: WebviewWindow,
+    state: tauri::State<State>,
+    id: Value,
+    done: bool,
+) -> Result<Value, String> {
+    if window.label() != "note" {
+        return Err("仅便签可更新此操作".into());
+    }
+    state
+        .service
+        .apply("todo:update", json!({"id":id,"patch":{"done":done}}))
+}
+#[tauri::command]
+fn note_add(
+    window: WebviewWindow,
+    state: tauri::State<State>,
+    text: String,
+) -> Result<Value, String> {
+    if window.label() != "note" {
+        return Err("仅便签可添加此操作".into());
+    }
+    state.service.apply("todo:add", json!({"text":text}))
+}
+#[tauri::command]
+fn companion_command(
+    window: WebviewWindow,
+    state: tauri::State<State>,
+    command: String,
+    args: Value,
+) -> Result<Value, String> {
+    if window.label() != "panel"
+        && !matches!(
+            command.as_str(),
+            "screen:pause" | "alert:ack" | "pomodoro:stop"
+        )
+    {
+        return Err("请从控制面板执行此操作".into());
+    }
+    let result = state.service.apply(&command, args)?;
+    if command == "settings:set" {
+        let d = state.service.data.snapshot();
+        let s = &d["settings"];
+        let settings = Settings {
+            workspace: s["cwd"].as_str().unwrap_or("").into(),
+            permission: s["permission"].as_str().unwrap_or("read-only").into(),
+            codex_path: s["codexExe"].as_str().unwrap_or("").into(),
+            model: s["codexModel"].as_str().unwrap_or("").into(),
+        };
+        companion::save(
+            &state.settings_path,
+            &serde_json::to_value(&settings).map_err(|e| e.to_string())?,
+        )?;
+        *state.settings.lock().unwrap() = settings;
+    }
+    Ok(result)
+}
+#[tauri::command]
+async fn observer_windows(window: WebviewWindow) -> Result<Vec<Value>, String> {
+    panel_only(&window)?;
+    tauri::async_runtime::spawn_blocking(observer::choices)
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+fn observer_permission(window: WebviewWindow) -> Result<bool, String> {
+    panel_only(&window)?;
+    Ok(observer::request_permission())
+}
+#[tauri::command]
+async fn look_now(
+    window: WebviewWindow,
+    state: tauri::State<'_, State>,
+    chosen: Option<u32>,
+) -> Result<(), String> {
+    panel_only(&window)?;
+    let service = state.service.clone();
+    tauri::async_runtime::spawn_blocking(move || service.look(chosen, true))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -633,8 +769,56 @@ fn main() {
                     let _ = handle.emit("task:update", task);
                 }),
             );
+            let legacy = app
+                .path()
+                .data_dir()?
+                .join(if cfg!(target_os = "macos") {
+                    "claude-ojousama"
+                } else {
+                    "claude-ojousama"
+                })
+                .join("pet-data.json");
+            let companion =
+                companion::Companion::open(data_dir.join("pet-data.json"), Some(&legacy))?;
+            // Preserve prototype connection choices while importing the full companion data.
+            let prototype_settings = settings.clone();
+            if !data_dir.join("companion-migrated").exists() {
+                companion.change(|d| {
+                    if !prototype_settings.workspace.is_empty() {
+                        d["settings"]["cwd"] = json!(prototype_settings.workspace);
+                    }
+                    if !prototype_settings.codex_path.is_empty() {
+                        d["settings"]["codexExe"] = json!(prototype_settings.codex_path);
+                    }
+                    if !prototype_settings.model.is_empty() {
+                        d["settings"]["codexModel"] = json!(prototype_settings.model);
+                    }
+                    Ok(())
+                })?;
+                std::fs::write(data_dir.join("companion-migrated"), b"1")?;
+            }
+            let handle = app.handle().clone();
+            let service = service::Service::new(
+                companion,
+                tasks.clone(),
+                data_dir.join("observer-workspace"),
+                Arc::new(move |name, payload| {
+                    let _ = handle.emit(name, payload);
+                }),
+            )?;
+            let service_loop = service.clone();
+            let service_stop = stop.clone();
+            std::thread::spawn(move || {
+                while !service_stop.load(Ordering::Relaxed) {
+                    if let Err(error) = service_loop.tick() {
+                        eprintln!("companion: {error}");
+                    }
+                    std::thread::sleep(Duration::from_secs(4));
+                }
+            });
             app.manage(State {
                 tasks,
+                service,
                 settings: Mutex::new(settings),
                 settings_path,
                 motion: motion.clone(),
@@ -703,7 +887,14 @@ fn main() {
             drag_begin,
             drag_move,
             drag_end,
-            perch_toggle
+            perch_toggle,
+            companion_command,
+            observer_windows,
+            observer_permission,
+            look_now,
+            note_toggle,
+            note_update,
+            note_add
         ])
         .build(tauri::generate_context!())
         .expect("启动轻量桌宠失败");
@@ -712,6 +903,7 @@ fn main() {
             let state = app.state::<State>();
             state.stop.store(true, Ordering::Relaxed);
             state.tasks.shutdown();
+            state.service.shutdown();
         }
     });
 }

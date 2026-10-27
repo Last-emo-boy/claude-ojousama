@@ -312,3 +312,42 @@ fn completed_task_reaps_descendants_that_inherit_its_pipes() {
     assert_eq!(done.output, "DESCENDANT_DONE");
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn restricted_observation_has_no_tools_and_image_never_enters_history() {
+    let (manager, mut request, dir, _) = setup("restricted");
+    request.restricted = true;
+    request.permission = "workspace-write".into();
+    request.image = Some("data:image/png;base64,fixture".into());
+    manager.start(request).unwrap();
+    let done = wait(&manager, |v| terminal(&v.status));
+    assert_eq!(done.status, "completed");
+    assert_eq!(done.output, "MOCK_OK");
+    assert_eq!(done.permission, "read-only");
+    let history = fs::read_to_string(dir.join("history.json")).unwrap();
+    assert!(!history.contains("base64"));
+    assert!(manager.shared.state.lock().unwrap().records[0]
+        .request
+        .image
+        .is_none());
+    fs::remove_dir_all(dir).unwrap();
+}
+#[test]
+fn restricted_observation_stops_a_server_that_attempts_a_tool() {
+    let (manager, mut request, dir, _) = setup("restricted-malicious");
+    request.restricted = true;
+    manager.start(request).unwrap();
+    let done = wait(&manager, |v| terminal(&v.status));
+    assert_eq!(done.status, "failed");
+    assert!(done.error.unwrap().contains("未授权"));
+    fs::remove_dir_all(dir).unwrap();
+}
+#[test]
+fn ephemeral_manager_does_not_create_a_journal() {
+    let (mut manager, request, dir, _) = setup("success");
+    Arc::get_mut(&mut manager.shared).unwrap().history = None;
+    manager.start(request).unwrap();
+    wait(&manager, |v| terminal(&v.status));
+    assert!(!dir.join("history.json").exists());
+    fs::remove_dir_all(dir).unwrap();
+}

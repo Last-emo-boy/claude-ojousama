@@ -40,7 +40,7 @@ fn main() {
         } else if line.contains("\"method\":\"thread/start\"") {
             if !line.contains(r#""dangerous":{"enabled":false}"#)
                 || !line.contains(r#""with.dot":{"enabled":false}"#)
-                || !line.contains(r#""approvalPolicy":"on-request""#)
+                || !(line.contains(r#""approvalPolicy":"on-request""#) || (scenario.starts_with("restricted") && line.contains(r#""approvalPolicy":"never""#) && line.contains(r#""features.shell_tool":false"#) && line.contains(r#""environments":[]"#) && line.contains(r#""ephemeral":true"#)))
                 || !line.contains(r#""features.hooks":false"#)
             {
                 emit(&format!(
@@ -58,9 +58,10 @@ fn main() {
             emit(
                 r#"{"method":"item/reasoning/summaryTextDelta","params":{"threadId":"thread-fixture","delta":"thinking"}}"#,
             );
-            emit(
+            if scenario != "restricted" { emit(
                 r#"{"method":"item/started","params":{"threadId":"thread-fixture","item":{"id":"command","type":"commandExecution","command":"fixture command"}}}"#,
-            );
+            ); }
+            if scenario == "restricted" && !line.contains("data:image/png;base64,fixture") { complete("MISSING_IMAGE");continue; }
             if scenario == "race-turn" {
                 thread::sleep(Duration::from_millis(200));
             }

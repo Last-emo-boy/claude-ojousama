@@ -1,7 +1,7 @@
 'use strict'
 // Pure classifiers used by the autonomy loop (no Electron here, easy to unit-test).
 
-const DEFAULT_BLOCK = ['1Password', 'KeePass', 'KeePassXC', 'Bitwarden', 'LastPass', 'Dashlane', 'WeChat', 'Weixin', 'QQ', 'TIM', 'Telegram', 'WhatsApp', 'Signal', '密码', 'password', '银行', 'bank', '支付', 'alipay', 'paypal', '充值', '余额', '账单', '钱包', 'billing', 'invoice', 'wallet', 'InPrivate', '无痕', 'Incognito', '隐私浏览']
+const DEFAULT_BLOCK = require('../../assets/observation-policy.json').blockedApps
 const DEFAULT_DISTRACT = ['bilibili', '哔哩哔哩', '微博', 'weibo', '抖音', 'douyin', '快手', '小红书', 'youtube', 'twitter', 'x.com', 'reddit', 'netflix', '爱奇艺', '优酷', '腾讯视频', '虎牙', '斗鱼', 'twitch', 'steam', '淘宝', '京东']
 const MEETING_PROCS = /^(zoom|teams|ms-teams|wemeetapp|wemeet|tencentmeeting|voovmeeting|webex|ciscowebex)/i
 // Only titles that mean "a meeting is running now" (not "Meeting notes", not an idle meeting app).
