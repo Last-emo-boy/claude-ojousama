@@ -4,6 +4,7 @@ mod accessibility;
 mod alerts;
 mod backend;
 mod behavior;
+mod clipboard_watch;
 mod companion;
 mod desktop;
 mod desktop_entry;
@@ -178,6 +179,7 @@ fn request_clipboard(app: &tauri::AppHandle) -> Result<(), String> {
         return Err("屏幕锁定时不读取剪贴板".into());
     }
     let state = app.state::<State>();
+    state.service.clipboard_reset();
     state.clipboard_pending.store(true, Ordering::Relaxed);
     if let Err(error) = panel(app) {
         state.clipboard_pending.store(false, Ordering::Relaxed);
@@ -215,6 +217,65 @@ async fn clipboard_preview(window: WebviewWindow) -> Result<Value, String> {
             return Err("窗口状态已变化，本次剪贴板内容未带入。".into());
         }
         desktop_entry::clipboard_preview(text)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+fn clipboard_offer_pending(
+    window: WebviewWindow,
+    state: tauri::State<State>,
+) -> Result<bool, String> {
+    panel_only(&window)?;
+    Ok(state.service.clipboard_pending())
+}
+#[tauri::command]
+fn clipboard_offer_open(
+    window: WebviewWindow,
+    state: tauri::State<State>,
+    token: u64,
+    action: String,
+) -> Result<(), String> {
+    if !matches!(window.label(), "pet" | "panel") {
+        return Err("请从桌宠或面板打开剪贴板操作".into());
+    }
+    if !observer::unlocked() {
+        return Err("请先解锁屏幕，再打开剪贴板操作".into());
+    }
+    state.service.clipboard_choose(token, &action)?;
+    if action == "no" {
+        return Ok(());
+    }
+    state.clipboard_pending.store(false, Ordering::Relaxed);
+    if let Err(error) = panel(window.app_handle()) {
+        state.service.clipboard_reset();
+        return Err(error);
+    }
+    window
+        .app_handle()
+        .emit_to("panel", "panel:tab", "chat")
+        .map_err(|e| e.to_string())?;
+    window
+        .app_handle()
+        .emit_to("panel", "clipboard:offer-request", ())
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
+async fn clipboard_offer_preview(
+    window: WebviewWindow,
+    state: tauri::State<'_, State>,
+) -> Result<Value, String> {
+    panel_only(&window)?;
+    let service = state.service.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if !window.is_focused().map_err(|e| e.to_string())? || !observer::unlocked() {
+            return Err("请激活面板并确认屏幕已解锁，再带入剪贴板内容。".into());
+        }
+        let value = service.clipboard_take()?;
+        if !window.is_focused().map_err(|e| e.to_string())? || !observer::unlocked() {
+            return Err("窗口状态已变化，本次剪贴板内容未带入。".into());
+        }
+        Ok(value)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1637,6 +1698,9 @@ fn main() {
             desktop_status,
             clipboard_pending,
             clipboard_preview,
+            clipboard_offer_pending,
+            clipboard_offer_open,
+            clipboard_offer_preview,
             show_panel,
             hide_panel,
             quit_app,

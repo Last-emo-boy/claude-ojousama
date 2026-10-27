@@ -13,6 +13,7 @@ export function spritePlayback({ task, motion = {}, scene, notice, now = Date.no
   if (physical || (route && !motion.paused)) name = presentation(task, motion.phase).animation
   else if (active) { name = presentation(task).animation; animated = true }
   else if (notice?.source === 'alert') { name = 'wave'; intent = notice.token; animated = true }
+  else if (notice?.source === 'clipboard') { name = 'point'; intent = notice.token; animated = true }
   else if (live && (!motion.paused || manual || (scene.animation === 'nap' && motion.pauseReason === 'away'))) {
     name = scene.animation || 'idle'; intent = scene.until; animated = manual || name === 'nap'
   } else if (route) name = presentation(task, motion.phase).animation

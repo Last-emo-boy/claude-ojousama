@@ -20,3 +20,9 @@ export function desktopStatus(value, platform) {
   const startup = value.autoStart===null ? '登录启动状态未知' : value.autoStart ? '登录后启动已开启' : '登录后启动未开启'
   return [value.error, value.autoStartError, `${shortcut} · ${startup}`].filter(Boolean).join('；')
 }
+export function clipboardWatchPayload(enabled) { return { clipboardWatch:!!enabled, clipboardWatchConsent:enabled?1:0 } }
+export function clipboardWatchStatus(settings, state) {
+  if (!state?.supported) return '当前桌面不支持后台检测，可使用剪贴板操作。'
+  if (!settings.clipboardWatch || settings.clipboardWatchConsent!==1) return '未开启后台检测'
+  return state.error || '已开启 · 仅在本机识别'
+}

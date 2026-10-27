@@ -113,7 +113,10 @@ function mountPet() {
   spriteContext = canvas.getContext('2d')
   spriteContext.setTransform(ratio, 0, 0, ratio, 0, 0)
   spriteContext.imageSmoothingEnabled = false
-  $('pet-open').addEventListener('click', event => action(event.currentTarget, () => invoke('show_panel', bubbles.read()?.source==='alert'?{tab:'todos'}:{})))
+  $('pet-open').addEventListener('click', event => action(event.currentTarget, () => {
+    const notice=bubbles.read()
+    return notice?.source==='clipboard'?invoke('clipboard_offer_open',{token:notice.token,action:'preview'}):invoke('show_panel',notice?.source==='alert'?{tab:'todos'}:{})
+  }))
   $('pet-dismiss').addEventListener('click', () => { bubbles.dismiss(); renderPet() })
   const menu = visible => { $('pet-menu').hidden = !visible; canvas.setAttribute('aria-expanded', String(visible)); renderPet() }
   $('pet-menu-chat').addEventListener('click', () => { menu(false); invoke('show_panel').catch(showError) })
@@ -291,21 +294,26 @@ function sendHitRegions() {
 
 function renderAlertActions(notice, visible) {
   const box=$('pet-alert-actions')
-  box.hidden=notice?.source!=='alert'
+  box.hidden=!['alert','clipboard'].includes(notice?.source)
   if(box.hidden)return
-  if(alertControlsKey!==String(notice.token)) {
-    alertControlsKey=String(notice.token)
-    box.replaceChildren(...notice.buttons.map(choice=>{
-      const button=element('button',choice.id==='done'||choice.id==='ok'?'primary':'',choice.label)
+  const key=`${notice.source}:${notice.token}`
+  if(alertControlsKey!==key) {
+    alertControlsKey=key
+    box.replaceChildren(...notice.buttons.map((choice,index)=>{
+      const button=element('button',choice.id==='done'||choice.id==='ok'||(notice.source==='clipboard'&&index===0)?'primary':'',choice.label)
       button.type='button'
       button.addEventListener('click',event=>action(event.currentTarget,async()=>{
-        await invoke('companion_command',{command:'alert:respond',args:{id:notice.alertId,choice:choice.id}})
-        bubbles.clearAlert(notice.alertId);renderPet()
+        if(notice.source==='clipboard') {
+          await invoke('clipboard_offer_open',{token:notice.token,action:choice.id});bubbles.clipboard({clear:notice.token})
+        } else {
+          await invoke('companion_command',{command:'alert:respond',args:{id:notice.alertId,choice:choice.id}});bubbles.clearAlert(notice.alertId)
+        }
+        renderPet()
       }))
       return button
     }))
   }
-  if(visible && !document.hidden && shownAlertToken!==notice.token) {
+  if(notice.source==='alert' && visible && !document.hidden && shownAlertToken!==notice.token) {
     shownAlertToken=notice.token
     invoke('alert_shown',{token:notice.token}).then(shown=>{if(!shown && shownAlertToken===notice.token)shownAlertToken=null}).catch(error=>{if(shownAlertToken===notice.token)shownAlertToken=null;showError(error)})
   }
@@ -321,11 +329,11 @@ function renderPet() {
   const companionSpeaking = notice?.source === 'speech' && !info.active
   $('pet-message').textContent = notice?.source === 'error' ? '' : short(notice?.text, 105)
   $('pet-bubble').classList.toggle('companion-speaking', !!companionSpeaking)
-  if(notice){$('pet-status').textContent=notice.label;$('pet-status').dataset.state=notice.source==='error'?'failed':notice.source==='speech'?'idle':task?.status||'idle'}
+  if(notice){$('pet-status').textContent=notice.label;$('pet-status').dataset.state=notice.source==='error'?'failed':notice.source==='task'?task?.status||'idle':'idle'}
   $('pet-error').textContent = notice?.source === 'error' ? notice.text : ''
   $('pet-bubble').classList.toggle('has-error', notice?.source === 'error')
   $('pet-stop').classList.toggle('hidden', !isActive(task))
-  $('pet-open').textContent = notice?.source === 'alert' ? '全部提醒' : notice?.source === 'task' ? '查看任务' : '聊两句'
+  $('pet-open').textContent = notice?.source === 'alert' ? '全部提醒' : notice?.source === 'clipboard' ? '看看文字' : notice?.source === 'task' ? '查看任务' : '聊两句'
   renderAlertActions(notice,!$('pet-bubble').hidden)
   $('pet-perch').textContent = state.motion.phase === 'perched' ? '下来' : '爬上窗口'
   $('pet-perch').classList.toggle('hidden', !state.positionable)
@@ -604,6 +612,7 @@ async function boot() {
   await window.__TAURI__.event.listen('task:update', event => acceptTask(event.payload))
   if (view === 'pet') {
     await window.__TAURI__.event.listen('companion:alert',event=>{bubbles.alert(event.payload);renderPet()})
+    await window.__TAURI__.event.listen('clipboard:offer',event=>{bubbles.clipboard(event.payload);renderPet()})
     await window.__TAURI__.event.listen('pet:error', event => showError(event.payload))
   await window.__TAURI__.event.listen('motion:update', event => {
       if((event.payload.generation||0)<(state.motion.generation||0))return
@@ -621,12 +630,15 @@ async function boot() {
   state.positionable = initial.positionable !== false
   state.platform = initial.platform
   state.motion = initial.motion || state.motion
-  if (view === 'pet') {bubbles.task(currentTask(state.tasks), { snapshot: true });bubbles.alert(initial.companion?.alert)}
+  if (view === 'pet') {bubbles.task(currentTask(state.tasks), { snapshot: true });bubbles.alert(initial.companion?.alert);bubbles.clipboard(initial.companion?.clipboard?.offer)}
   if (view === 'panel' && initial.companion) {
     companionPanel = mountCompanion({invoke, initial: initial.companion, showError, platform:state.platform, onTasks: () => companionPanel.select('tasks')})
     const clipboardRequest=async()=>{if(await invoke('clipboard_pending'))await companionPanel.previewClipboard()}
+    const clipboardOffer=async()=>{if(await invoke('clipboard_offer_pending'))await companionPanel.previewClipboard(true)}
     await window.__TAURI__.event.listen('clipboard:request',()=>clipboardRequest().catch(showError))
+    await window.__TAURI__.event.listen('clipboard:offer-request',()=>clipboardOffer().catch(showError))
     await clipboardRequest()
+    await clipboardOffer()
     await window.__TAURI__.event.listen('companion:update', event => companionPanel.update(event.payload))
     await window.__TAURI__.event.listen('panel:tab', event => companionPanel.select(event.payload))
     await window.__TAURI__.event.listen('motion:update',event=>companionPanel.motionUpdated(event.payload))

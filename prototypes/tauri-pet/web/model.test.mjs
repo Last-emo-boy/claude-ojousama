@@ -272,3 +272,12 @@ test('desktop preferences do not overwrite unavailable system capabilities', asy
   assert.match(desktopStatus({autoStart:false,hotkeyActive:false,shortcutSupported:true,error:'快捷键被占用'}),/快捷键被占用/)
   assert.match(desktopStatus({autoStart:false,hotkeyActive:true,activeHotkey:'super+alt+KeyQ',shortcutSupported:true},'macos'),/Cmd \+ Alt \+ Q/)
 })
+
+test('background clipboard opt-in stays distinct from legacy preference and manual actions', async () => {
+  const { clipboardWatchPayload, clipboardWatchStatus }=await import('./desktop-entry.mjs')
+  assert.deepEqual(clipboardWatchPayload(true),{clipboardWatch:true,clipboardWatchConsent:1})
+  assert.deepEqual(clipboardWatchPayload(false),{clipboardWatch:false,clipboardWatchConsent:0})
+  assert.equal(clipboardWatchStatus({clipboardWatch:true},{supported:true}),'未开启后台检测')
+  assert.equal(clipboardWatchStatus({clipboardWatch:true,clipboardWatchConsent:1},{supported:true}),'已开启 · 仅在本机识别')
+  assert.match(clipboardWatchStatus({clipboardWatch:true,clipboardWatchConsent:1},{supported:false}),/可使用剪贴板操作/)
+})

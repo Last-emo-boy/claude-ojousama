@@ -1,4 +1,4 @@
-import { clipboardPrompt, appendDraft, clipboardTodo, desktopPayload, desktopStatus } from './desktop-entry.mjs'
+import { clipboardPrompt, appendDraft, clipboardTodo, desktopPayload, desktopStatus, clipboardWatchPayload, clipboardWatchStatus } from './desktop-entry.mjs'
 import { observationPayload, observationStatus, observationPermissions } from './observation.mjs'
 import { habitPayload, moodLabel } from './behavior.mjs'
 const $ = id => document.getElementById(id)
@@ -22,6 +22,7 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   let tab = 'chat'
   let motionValue = null
   let desktopValue = null
+  let clipboardGeneration = 0
   const header = document.querySelector('.panel-header')
   const tasks = document.createElement('div'); tasks.id = 'view-tasks'
   const form = $('task-form'), result = document.querySelector('.tasks-section') || $('task-history').closest('section')
@@ -60,6 +61,7 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
     <section id="view-settings" class="companion-view" hidden>
       <h2>日常陪伴</h2><form id="habits-form" class="stack-form"><label class="check-row"><input id="habit-idle" type="checkbox">闲时做点小动作，离开时打个盹</label><label class="check-row"><input id="habit-proactive" type="checkbox">喝水提醒和偶尔的小惊喜</label><label class="check-row"><input id="habit-focus" type="checkbox">专注计时中不打扰</label><div class="settings-grid"><label>活跃程度<select id="habit-autonomy"><option value="quiet">安静</option><option value="normal">适中</option><option value="active">活泼</option></select></label><label>小惊喜<select id="habit-mischief"><option value="0">关闭</option><option value="1">偶尔</option><option value="2">适中</option><option value="3">经常</option></select></label></div><label>喝水提醒间隔（分钟）<input id="habit-water" type="number" min="0" max="600" step="1" required></label><p class="setting-help">0 为关闭；只累计你使用电脑的时间。日常动作在本机运行，不调用 AI。</p><button class="primary">保存陪伴设置</button><p id="habits-state" role="status"></p></form>
       <h2>桌面入口</h2><form id="desktop-entry-form" class="stack-form"><label class="check-row"><input id="desktop-autostart" type="checkbox" disabled>登录后启动</label><p class="setting-help">安装到固定位置后再开启。</p><label>剪贴板快捷键<input id="desktop-hotkey" placeholder="CommandOrControl+Alt+Q" spellcheck="false"></label><p class="setting-help">留空关闭。快捷键只打开文字预览，不会自动发送给 AI。</p><div class="quick-actions"><button class="primary">保存桌面设置</button><button id="desktop-refresh" type="button">刷新状态</button></div><p id="desktop-state" role="status"></p></form>
+      <form id="clipboard-watch-form" class="stack-form"><label class="check-row"><input id="clipboard-watch-enabled" type="checkbox">复制报错、代码或英文时，问问是否需要帮忙</label><p class="setting-help">后台读取剪贴板文字，仅在本机识别，不保存历史。选择操作后先带入草稿，不会自动发送给 AI。</p><button id="clipboard-watch-save" type="submit">保存剪贴板设置</button><p id="clipboard-watch-state" role="status"></p></form>
       <h2>安静地陪着你</h2>
       <form id="observation-form" class="stack-form">
         <label class="check-row"><input id="observe-enabled" type="checkbox">主动观察当前窗口</label>
@@ -92,13 +94,19 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   const refresh = async()=>{const values=await invoke('observer_windows');$('look-window').replaceChildren(...values.map(w=>{const n=text('option',`${w.name} · ${w.title}`);n.value=w.id;return n}));$('look-controls').open=true}
   bind('look-open',refresh);bind('look-refresh',refresh)
   bind('look-now',async()=>{const id=Number($('look-window').value);if(!id)throw new Error('请先选择一个窗口');await invoke('look_now',{chosen:id});$('look-state').textContent='这次观察已开始，合适的内容会显示在桌宠气泡里。'})
-  async function previewClipboard() {
-    const value=await invoke('clipboard_preview')
+  async function previewClipboard(offer=false) {
+    const generation=++clipboardGeneration
+    const value=await invoke(offer?'clipboard_offer_preview':'clipboard_preview')
+    if(generation!==clipboardGeneration)return
     $('clipboard-text').value=value.text;$('clipboard-quick').hidden=false
     $('clipboard-state').textContent=value.truncated?`已带入前 ${Array.from(value.text).length} 字；过长部分未带入，可编辑后再发送。`:'只在本机预览；选择后带入输入框，发送前可修改。'
     select('chat');$('clipboard-text').focus()
+    if(offer && value.action && value.action!=='preview') {
+      const draft=appendDraft($('chat-text').value,clipboardPrompt(value.action,value.text))
+      $('chat-text').value=draft;clearClipboard();$('chat-text').focus()
+    }
   }
-  function clearClipboard() {$('clipboard-text').value='';$('clipboard-quick').hidden=true}
+  function clearClipboard() {clipboardGeneration++;$('clipboard-text').value='';$('clipboard-quick').hidden=true}
   bind('clipboard-open',previewClipboard);bind('clipboard-close',clearClipboard)
   for(const button of document.querySelectorAll('[data-clipboard]'))button.addEventListener('click',async()=>{
     button.disabled=true
@@ -116,6 +124,7 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
     $('desktop-state').textContent=desktopStatus(desktopValue,platform)
   }
   bind('desktop-refresh',refreshDesktop)
+  submit('clipboard-watch-form',async()=>{await call('settings:set',clipboardWatchPayload($('clipboard-watch-enabled').checked))})
   submit('desktop-entry-form',async()=>{
     if(!desktopValue)throw new Error('请先刷新桌面状态')
     try {await call('settings:set',desktopPayload({hotkey:$('desktop-hotkey').value,autoStart:$('desktop-autostart').disabled?null:$('desktop-autostart').checked,shortcutSupported:desktopValue.shortcutSupported}))}
@@ -170,6 +179,9 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   function row(title,meta=''){const n=text('div','', 'companion-item');const body=text('div','');body.append(text('p',title),text('small',meta));n.append(body);return n}
   function render() {
     const d=current.data
+    $('clipboard-watch-state').textContent=clipboardWatchStatus(d.settings,current.clipboard)
+    const clipboardSupported=current.clipboard?.supported===true
+    $('clipboard-watch-enabled').disabled=!clipboardSupported;$('clipboard-watch-save').disabled=!clipboardSupported
     renderMotion()
     $('chat-welcome').hidden=d.chat.messages.length>0
     $('chat-send').disabled=!!current.chatTask; $('chat-stop').hidden=!current.chatTask
@@ -202,6 +214,7 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
     $('observer-state').textContent=observationStatus(conf,o);$('observer-permissions').textContent=observationPermissions(o.capabilities)
   }
   function fill() {const d=current.data,s=d.settings,o=d.observation
+    $('clipboard-watch-enabled').checked=s.clipboardWatch===true && s.clipboardWatchConsent===1
     for(const [id,key]of [['habit-idle','idleActions'],['habit-proactive','proactive'],['habit-focus','focusGuard']])$(id).checked=s[key]!==false
     $('habit-autonomy').value=s.autonomy||'active';$('habit-mischief').value=s.mischief??2;$('habit-water').value=s.waterMinutes??60
     $('weather-city').value=s.weatherCity||''

@@ -8,13 +8,15 @@ export function createBubbleState() {
   let error = null
   let alert = null
   let alertToken = 0
+  let clipboard = null
+  let clipboardToken = 0
   const clearAlert = id => {
     if (String(id) !== String(alert?.alertId)) return
     alert = speech = null
     if (!taskNotice?.needsAction) taskNotice = null
   }
   const read = (now = Date.now()) => {
-    const notices = [error, taskNotice?.needsAction ? taskNotice : null, alert, speech, taskNotice]
+    const notices = [error, taskNotice?.needsAction ? taskNotice : null, alert, speech, clipboard, taskNotice]
     return notices.find(notice => notice && notice.until > now) || null
   }
   return {
@@ -48,10 +50,16 @@ export function createBubbleState() {
       alert = { source: 'alert', alertId: value.id, token: value.token, label: value.label || '提醒', text: String(value.text || ''), buttons: value.buttons || [], until: Math.min(value.until, now + 30000) }
     },
     clearAlert,
+    clipboard(value, now = Date.now()) {
+      if (value?.clear !== undefined) { if (value.clear === clipboard?.token) clipboard = null; return }
+      if (!value || !Number.isFinite(value.token) || value.token <= clipboardToken || value.until <= now) return
+      clipboardToken = value.token
+      clipboard = { source:'clipboard', token:value.token, label:'剪贴板', text:String(value.text||''), buttons:value.buttons||[], until:Math.min(value.until,now+20000) }
+    },
     error(text, now = Date.now()) {
       error = text ? { source: 'error', label: '出了点问题', text: String(text), until: now + 12000 } : null
     },
-    dismiss() { error = speech = taskNotice = alert = null },
+    dismiss() { error = speech = taskNotice = alert = clipboard = null },
     read,
   }
 }

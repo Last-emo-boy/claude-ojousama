@@ -28,6 +28,7 @@ pub fn defaults() -> Value {
     data["pomodoro"] = json!({"until":0,"minutes":25});
     data["settings"]["crossScreens"] = json!(true);
     data["settings"]["motionPausedUntil"] = json!(0);
+    data["settings"]["clipboardWatchConsent"] = json!(0);
     data
 }
 pub fn save(path: &Path, data: &Value) -> Result<(), String> {
@@ -310,7 +311,9 @@ pub(crate) fn apply(d: &mut Value, command: &str, args: Value) -> Result<Value, 
                     return Err(format!("未知设置：{key}"));
                 }
                 match key.as_str() {
-                    "idleActions" | "proactive" | "focusGuard" if !value.is_boolean() => {
+                    "idleActions" | "proactive" | "focusGuard" | "clipboardWatch"
+                        if !value.is_boolean() =>
+                    {
                         return Err("陪伴开关格式错误".into());
                     }
                     "autonomy"
@@ -323,6 +326,9 @@ pub(crate) fn apply(d: &mut Value, command: &str, args: Value) -> Result<Value, 
                     }
                     "waterMinutes" if !value.as_u64().is_some_and(|n| n <= 600) => {
                         return Err("喝水提醒需为 0–600 分钟".into());
+                    }
+                    "clipboardWatchConsent" if !value.as_u64().is_some_and(|n| n <= 1) => {
+                        return Err("剪贴板检测设置格式错误".into());
                     }
                     _ => {}
                 }

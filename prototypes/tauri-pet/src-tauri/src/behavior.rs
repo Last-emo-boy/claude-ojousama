@@ -9,7 +9,7 @@ pub struct Context {
     pub unlocked: bool,
 }
 impl Context {
-    fn fresh(self, now: u64) -> bool {
+    pub fn fresh(self, now: u64) -> bool {
         self.at > 0 && now.saturating_sub(self.at) < 5_000
     }
 }

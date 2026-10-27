@@ -2,7 +2,7 @@ use crate::{
     accessibility::Target,
     alerts,
     backend::{StartRequest, TaskManager, TaskView},
-    behavior,
+    behavior, clipboard_watch,
     companion::{self, Companion},
     growth, observer, utilities,
 };
@@ -81,6 +81,7 @@ struct Runtime {
     alert_token: u64,
     behavior: behavior::State,
     body_context: behavior::Context,
+    clipboard: clipboard_watch::State,
 }
 impl Service {
     pub fn new(
@@ -118,7 +119,7 @@ impl Service {
                     .find(|a| companion::id(&a["id"]) == companion::id(&delivery.id))
                     .map(|a| alert_notice(delivery, a))
             });
-        json!({"data":data,"alert":alert,"chatTask":r.chat,"observer":{"status":r.status,"error":r.error,"running":r.job.is_some(),"permission":observer::permission(),"capabilities":capabilities}})
+        json!({"clipboard":{"offer":r.clipboard.notice(companion::now()),"error":r.clipboard.error,"supported":observer::screen_supported()},"data":data,"alert":alert,"chatTask":r.chat,"observer":{"status":r.status,"error":r.error,"running":r.job.is_some(),"permission":observer::permission(),"capabilities":capabilities}})
     }
     pub fn changed(&self) {
         (self.emit)("companion:update", self.snapshot());
@@ -158,6 +159,7 @@ impl Service {
                 || r.job.is_some()
                 || r.preparing
                 || r.alert.is_some()
+                || r.clipboard.notice(now).is_some()
                 || r.pending_ambient.is_some();
             let context = r.body_context;
             r.behavior
@@ -180,6 +182,121 @@ impl Service {
             self.gesture(scene.text, scene.animation, scene.duration, true);
         }
         Ok(())
+    }
+    fn clipboard_events(&self, events: Vec<Value>) {
+        for event in events {
+            (self.emit)("clipboard:offer", event);
+        }
+    }
+    pub fn clipboard_reset(&self) {
+        let events = self.runtime.lock().unwrap().clipboard.reset(true);
+        self.clipboard_events(events);
+    }
+    pub fn clipboard_choose(&self, token: u64, action: &str) -> Result<(), String> {
+        let event = {
+            let mut r = self.runtime.lock().unwrap();
+            if r.stopping {
+                return Err("应用正在退出".into());
+            }
+            r.clipboard.choose(token, action, companion::now())?
+        };
+        (self.emit)("clipboard:offer", event);
+        Ok(())
+    }
+    pub fn clipboard_pending(&self) -> bool {
+        self.runtime
+            .lock()
+            .unwrap()
+            .clipboard
+            .pending(companion::now())
+    }
+    pub fn clipboard_take(&self) -> Result<Value, String> {
+        let mut r = self.runtime.lock().unwrap();
+        if r.stopping {
+            return Err("应用正在退出".into());
+        }
+        r.clipboard.take(companion::now())
+    }
+    fn clipboard_ready(&self, d: &Value, idle: f64, busy: bool) -> bool {
+        let r = self.runtime.lock().unwrap();
+        let now = companion::now();
+        !r.stopping
+            && r.body_context.fresh(now)
+            && r.body_context.unlocked
+            && clipboard_watch::enabled(d)
+            && !busy
+            && !self.activity_busy()
+            && r.job.is_none()
+            && !r.preparing
+            && r.alert.is_none()
+            && r.pending_ambient.is_none()
+            && idle.is_finite()
+            && (0.0..120.0).contains(&idle)
+            && !companion::quiet_hours(d)
+            && d["observation"]["pausedUntil"].as_u64().unwrap_or(0) <= now
+            && !(d["settings"]["focusGuard"] != false
+                && d["pomodoro"]["until"].as_u64().unwrap_or(0) > now)
+    }
+    fn poll_clipboard(&self, d: &Value, idle: f64, busy: bool) {
+        let enabled = clipboard_watch::enabled(d) && observer::screen_supported();
+        let unlocked = enabled && observer::unlocked();
+        let allowed = unlocked
+            && self.clipboard_ready(d, idle, busy)
+            && observer::foreground_allowed(
+                d["observation"]["excludeApps"].as_str().unwrap_or(""),
+                true,
+                None,
+            );
+        let (ticket, events) = {
+            let mut r = self.runtime.lock().unwrap();
+            if r.stopping {
+                return;
+            }
+            if !unlocked {
+                let events = r.clipboard.reset(true);
+                (None, events)
+            } else {
+                r.clipboard.begin(enabled, allowed, companion::now())
+            }
+        };
+        self.clipboard_events(events);
+        let Some(ticket) = ticket else {
+            return;
+        };
+        // Native selection access stays outside the runtime mutex: shutdown and
+        // explicit preference changes can revoke this ticket during a read.
+        let result = arboard::Clipboard::new()
+            .and_then(|mut c| c.get_text())
+            .or_else(|error| match error {
+                arboard::Error::ContentNotAvailable => Ok(String::new()),
+                error => Err(error),
+            })
+            .map_err(|e| format!("剪贴板检测暂不可用：{e}"));
+        let current = self.data.snapshot();
+        let still_allowed = self.clipboard_ready(
+            &current,
+            observer::idle_seconds(),
+            self.tasks.list().iter().any(|t| !done(t)),
+        ) && observer::unlocked()
+            && observer::foreground_allowed(
+                current["observation"]["excludeApps"].as_str().unwrap_or(""),
+                true,
+                None,
+            );
+        let (events, changed) = {
+            let mut r = self.runtime.lock().unwrap();
+            let before = r.clipboard.error.clone();
+            let events = if still_allowed && !r.stopping {
+                r.clipboard.finish(ticket, result, companion::now())
+            } else {
+                r.clipboard.cancel(ticket)
+            };
+            (events, before != r.clipboard.error)
+        };
+        self.clipboard_events(events);
+        if changed {
+            self.changed();
+        }
     }
     pub fn apply(&self, command: &str, args: Value) -> Result<Value, String> {
         if command == "weather:refresh" {
@@ -436,6 +553,12 @@ impl Service {
         } else {
             self.data.apply(command, args)?
         };
+        if command == "settings:set" && !clipboard_watch::enabled(&self.data.snapshot()) {
+            self.clipboard_reset();
+        }
+        if matches!(command, "screen:pause" | "observation:set") {
+            self.clipboard_reset();
+        }
         self.clear_stale_alert();
         self.changed();
         Ok(result)
@@ -790,6 +913,13 @@ impl Service {
         let d = self.data.snapshot();
         let busy = self.tasks.list().iter().any(|t| !done(t));
         let idle = observer::idle_seconds();
+        let expired = self
+            .runtime
+            .lock()
+            .unwrap()
+            .clipboard
+            .expire(companion::now());
+        self.clipboard_events(expired);
         let present = !companion::quiet_hours(&d)
             && !busy
             && observer::unlocked()
@@ -798,6 +928,7 @@ impl Service {
             return Ok(());
         }
         self.deliver_ambient(&d);
+        self.poll_clipboard(&d, idle, busy);
         self.habits(&d, idle, busy)?;
         if companion::quiet_hours(&d) {
             return Ok(());
@@ -1196,6 +1327,7 @@ impl Service {
             runtime.perch = None;
             runtime.capture_target = None;
             runtime.alert = None;
+            runtime.clipboard.reset(true);
         }
         self.background.shutdown();
     }
@@ -1307,6 +1439,108 @@ mod tests {
         assert!(!eligible(&d, 200_000, &mut looks, 0));
         looks.clear();
         assert!(!eligible(&d, 200_000, &mut looks, 150_000));
+    }
+}
+
+#[cfg(test)]
+mod clipboard_tests {
+    use super::*;
+    fn fixture(name: &str) -> (Service, PathBuf) {
+        let root =
+            std::env::temp_dir().join(format!("ojousama-clipboard-{name}-{}", companion::now()));
+        std::fs::create_dir_all(&root).unwrap();
+        let data = Companion::open(root.join("data.json"), None).unwrap();
+        data.change(|d| {
+            d["settings"]["quietStart"] = json!("");
+            Ok(())
+        })
+        .unwrap();
+        let service = Service::new(
+            data,
+            TaskManager::ephemeral(Arc::new(|_| {})),
+            root.join("work"),
+            root.join("documents"),
+            Arc::new(|_, _| {}),
+        )
+        .unwrap();
+        (service, root)
+    }
+    fn context() -> behavior::Context {
+        behavior::Context {
+            at: companion::now(),
+            unlocked: true,
+            free: true,
+            may_sleep: true,
+        }
+    }
+    fn offer(service: &Service) -> u64 {
+        let mut r = service.runtime.lock().unwrap();
+        let now = companion::now();
+        let (t, _) = r.clipboard.begin(true, true, now);
+        r.clipboard.finish(t.unwrap(), Ok(String::new()), now);
+        let (t, _) = r.clipboard.begin(true, true, now + 1);
+        r.clipboard.finish(
+            t.unwrap(),
+            Ok("function greet(name) {\n  console.log(name);\n  return name;\n}".into()),
+            now + 1,
+        )[0]["token"]
+            .as_u64()
+            .unwrap()
+    }
+    #[test]
+    fn opt_in_freshness_presence_tasks_focus_and_pause_gate_reads_before_native_access() {
+        let (service, root) = fixture("gates");
+        service.body_context(context());
+        let mut d = service.data.snapshot();
+        assert!(!service.clipboard_ready(&d, 0.0, false));
+        d["settings"]["clipboardWatchConsent"] = json!(1);
+        assert!(service.clipboard_ready(&d, 0.0, false));
+        assert!(!service.clipboard_ready(&d, 0.0, true));
+        assert!(!service.clipboard_ready(&d, f64::INFINITY, false));
+        d["pomodoro"]["until"] = json!(companion::now() + 60000);
+        assert!(!service.clipboard_ready(&d, 0.0, false));
+        d["pomodoro"]["until"] = json!(0);
+        d["observation"]["pausedUntil"] = json!(companion::now() + 60000);
+        assert!(!service.clipboard_ready(&d, 0.0, false));
+        d["observation"]["pausedUntil"] = json!(0);
+        service.body_context(behavior::Context { at: 1, ..context() });
+        assert!(!service.clipboard_ready(&d, 0.0, false));
+        service.body_context(context());
+        service.shutdown();
+        assert!(!service.clipboard_ready(&d, 0.0, false));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn only_explicit_one_time_panel_handoff_contains_text_and_disabling_drops_it() {
+        let (service, root) = fixture("handoff");
+        let token = offer(&service);
+        assert!(!service.snapshot().to_string().contains("console.log"));
+        assert!(!std::fs::read_to_string(root.join("data.json"))
+            .unwrap()
+            .contains("console.log"));
+        service.clipboard_choose(token, "explain").unwrap();
+        assert!(service.clipboard_pending());
+        assert_eq!(service.clipboard_take().unwrap()["action"], "explain");
+        assert!(service.clipboard_take().is_err());
+        assert!(service.tasks.list().is_empty());
+        assert!(service.background.list().is_empty());
+        service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn disabling_detection_drops_selected_text_before_panel_consumption() {
+        let (service, root) = fixture("disable");
+        let token = offer(&service);
+        service.clipboard_choose(token, "preview").unwrap();
+        service
+            .apply("settings:set", json!({"clipboardWatch":false}))
+            .unwrap();
+        assert!(!service.clipboard_pending());
+        assert!(service.clipboard_take().is_err());
+        assert!(service.tasks.list().is_empty());
+        assert!(service.background.list().is_empty());
+        service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
 

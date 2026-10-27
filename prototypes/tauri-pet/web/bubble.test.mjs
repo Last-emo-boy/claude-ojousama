@@ -106,3 +106,16 @@ test('an old clear event cannot dismiss a newer delivery and acknowledgement cle
   state.clearAlert('a')
   assert.equal(state.read(4),null)
 })
+
+test('clipboard offers are finite, dismissible, and never displace decisions or actual speech', () => {
+  const state=createBubbleState()
+  const offer={token:1,text:'需要翻译吗？',until:20000,buttons:[{id:'translate',label:'翻译…'}]}
+  state.clipboard(offer,0);assert.equal(state.read(1).source,'clipboard')
+  state.speak({text:'刚才任务的结果',until:1000},2);assert.equal(state.read(3).source,'speech')
+  state.task(task('approval',{id:'decision'}),{now:1001});assert.equal(state.read(1002).needsAction,true)
+  state.dismiss();state.clipboard(offer,1003);assert.equal(state.read(1004),null)
+  state.clipboard({...offer,token:2},1005);state.clipboard({clear:1},1006)
+  assert.equal(state.read(1007).source,'clipboard');assert.equal(state.read(20000),null)
+  state.alert({id:'a',token:1,text:'提醒',until:30000},21000)
+  state.clipboard({clear:2},21001);assert.equal(state.read(21002).source,'alert')
+})
