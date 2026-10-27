@@ -116,6 +116,7 @@ impl Motion {
         self.vx = 0.0;
         self.vy = 0.0;
         self.phase = "perched".into();
+        self.last_sample = Instant::now();
         self.seat = Some(seat);
     }
 

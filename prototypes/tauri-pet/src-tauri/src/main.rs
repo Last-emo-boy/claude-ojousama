@@ -301,7 +301,19 @@ fn window_seats(window: &WebviewWindow, scale: f64) -> Result<Vec<windows::Seat>
         .map_err(|e| e.to_string())?
         .ok_or("没有可用的显示器")?;
     let area = monitor.work_area();
-    Ok(windows::seats(&windows::visible(scale)?, scale)
+    let native = windows::visible(scale)?;
+    if std::env::args().any(|arg| arg == "--diagnostics") {
+        let path = window
+            .app_handle()
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("windows.json");
+        let value = json!({"scale":scale,"ownPid":std::process::id(),"petPosition":window.outer_position().ok(),"area": {"x":area.position.x,"y":area.position.y,"width":area.size.width,"height":area.size.height},"windows":native});
+        std::fs::write(path, serde_json::to_vec(&value).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(windows::seats(&native, scale)
         .into_iter()
         .filter_map(|mut seat| {
             if seat.top < area.position.y as f64 + 128.0 * scale
@@ -335,12 +347,18 @@ fn toggle_perch(app: &tauri::AppHandle) -> Result<(), String> {
     } else {
         window_seats(&window, scale)?
     };
-    let target = seats.into_iter().min_by(|a, b| {
-        let centre = current.x + size.width as f64 / 2.0;
-        let score =
-            |s: &windows::Seat| (centre - centre.clamp(s.left, s.right)).abs() + s.top * 0.05;
-        score(a).total_cmp(&score(b))
-    });
+    // Explicit "sit" chooses the frontmost usable window, then the nearest span
+    // on that window. Do not jump to an unrelated back window just because it is closer.
+    let front = seats.first().map(|s| s.window.id);
+    let target = seats
+        .into_iter()
+        .filter(|s| Some(s.window.id) == front)
+        .min_by(|a, b| {
+            let centre = current.x + size.width as f64 / 2.0;
+            let score =
+                |s: &windows::Seat| (centre - centre.clamp(s.left, s.right)).abs() + s.top * 0.05;
+            score(a).total_cmp(&score(b))
+        });
     let mut m = state.motion.lock().unwrap();
     if current.phase == "perched" {
         m.leave();
@@ -485,7 +503,7 @@ fn start_motion(
                     m.release();
                 }
             }
-            if m.phase == "perched" {
+            if m.phase == "perched" && windows_at >= m.last_sample {
                 let centre = m.x + size.map(|s| s.width as f64 / 2.0).unwrap_or(180.0 * scale);
                 let valid = m
                     .seat

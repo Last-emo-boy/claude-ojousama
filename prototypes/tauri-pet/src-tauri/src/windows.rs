@@ -254,7 +254,10 @@ pub fn visible(_scale: f64) -> Result<Vec<WindowRect>, String> {
     use x11rb::{
         connection::Connection,
         errors::ReplyError,
-        protocol::xproto::{AtomEnum, ConnectionExt, ErrorKind, MapState},
+        protocol::{
+            xproto::{AtomEnum, ConnectionExt, MapState},
+            ErrorKind,
+        },
     };
     fn property<C: Connection>(
         connection: &C,
