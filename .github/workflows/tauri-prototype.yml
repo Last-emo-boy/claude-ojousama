@@ -35,10 +35,11 @@ jobs:
     defaults:
       run:
         working-directory: prototypes/tauri-pet
-    env:
-      CARGO_TARGET_DIR: ${{ runner.temp }}/ojousama-lite-target
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set build directory
+        shell: bash
+        run: printf 'CARGO_TARGET_DIR=%s/ojousama-lite-target\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24.18.0'
@@ -62,7 +63,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           path: |
-            ${{ runner.temp }}/ojousama-lite-target/release/bundle/nsis/*.exe
-            ${{ runner.temp }}/ojousama-lite-target/release/bundle/dmg/*.dmg
-            ${{ runner.temp }}/ojousama-lite-target/release/bundle/deb/*.deb
-            ${{ runner.temp }}/ojousama-lite-target/release/bundle/appimage/*.AppImage
+            ${{ env.CARGO_TARGET_DIR }}/release/bundle/nsis/*.exe
+            ${{ env.CARGO_TARGET_DIR }}/release/bundle/dmg/*.dmg
+            ${{ env.CARGO_TARGET_DIR }}/release/bundle/deb/*.deb
+            ${{ env.CARGO_TARGET_DIR }}/release/bundle/appimage/*.AppImage
