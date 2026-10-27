@@ -1,4 +1,5 @@
 use crate::{
+    accessibility::Target,
     backend::{StartRequest, TaskManager, TaskView},
     companion::{self, Companion},
     growth, observer, utilities,
@@ -42,6 +43,8 @@ struct Runtime {
     status: String,
     error: String,
     pending_ambient: Option<(String, u64, u64)>,
+    perch: Option<(Target, u64)>,
+    capture_target: Option<Target>,
 }
 impl Service {
     pub fn new(
@@ -64,7 +67,9 @@ impl Service {
     }
     pub fn snapshot(&self) -> Value {
         let r = self.runtime.lock().unwrap();
-        json!({"data":self.data.snapshot(),"chatTask":r.chat,"observer":{"status":r.status,"error":r.error,"running":r.job.is_some(),"permission":observer::permission()}})
+        let data = self.data.snapshot();
+        let capabilities = observer::capabilities(&data["observation"]);
+        json!({"data":data,"chatTask":r.chat,"observer":{"status":r.status,"error":r.error,"running":r.job.is_some(),"permission":observer::permission(),"capabilities":capabilities}})
     }
     pub fn changed(&self) {
         (self.emit)("companion:update", self.snapshot());
@@ -291,6 +296,8 @@ impl Service {
             let result = self.data.apply(command, args)?;
             r.epoch += 1;
             r.pending_ambient = None;
+            r.perch = None;
+            r.capture_target = None;
             if let Some(job) = &r.job {
                 let _ = self.background.cancel(job.id);
             }
@@ -303,7 +310,31 @@ impl Service {
         self.changed();
         Ok(result)
     }
+    /// A perch arrival queues one eligible foreground look, never starts work on the motion thread.
+    pub fn perch_changed(&self, target: Option<Target>) {
+        let mut r = self.runtime.lock().unwrap();
+        if r.stopping {
+            return;
+        }
+        if r.capture_target.is_some() && r.capture_target != target {
+            r.epoch += 1;
+            r.pending_ambient = None;
+            r.capture_target = None;
+            if let Some(job) = &r.job {
+                let _ = self.background.cancel(job.id);
+            }
+        }
+        r.perch = target.map(|target| (target, companion::now() + 120_000));
+    }
     pub fn look(&self, chosen: Option<u32>, manual: bool) -> Result<(), String> {
+        self.look_target(chosen, manual, None)
+    }
+    fn look_target(
+        &self,
+        chosen: Option<u32>,
+        manual: bool,
+        expected: Option<Target>,
+    ) -> Result<(), String> {
         let now = companion::now();
         let (d, epoch) = {
             let mut r = self.runtime.lock().unwrap();
@@ -324,12 +355,22 @@ impl Service {
             if manual {
                 r.pending_ambient = None;
             }
+            if expected.is_some()
+                && r.perch
+                    .is_none_or(|(target, until)| Some(target) != expected || until <= now)
+            {
+                return Ok(());
+            }
             let last_look = r.last_look;
             if !manual && !eligible(&d, now, &mut r.looks, last_look) {
                 return Ok(());
             }
             r.last_look = now;
             r.preparing = true;
+            r.capture_target = expected;
+            if expected.is_some() {
+                r.perch = None;
+            }
             r.status = "观察中".into();
             r.error.clear();
             let epoch = r.epoch;
@@ -338,25 +379,31 @@ impl Service {
         let capture = match observer::capture(
             d["observation"]["excludeApps"].as_str().unwrap_or(""),
             chosen,
+            observer::text_enabled(&d["observation"]),
+            expected,
         ) {
             Ok(v) => v,
             Err(e) => {
                 let mut r = self.runtime.lock().unwrap();
                 r.status.clear();
                 r.preparing = false;
+                r.capture_target = None;
+                if r.epoch != epoch {
+                    return Ok(());
+                }
                 r.error = e.clone();
                 drop(r);
                 self.changed();
                 return Err(e);
             }
         };
+        let (prompt, image) = capture.input();
         let request = self.restricted_request(
             format!(
-                "{}\n上一次已经说过（仅数据，请勿重复）：{}",
-                observer::prompt(&capture.app, &capture.title),
+                "{prompt}\n上一次已经说过（仅数据，请勿重复）：{}",
                 self.runtime.lock().unwrap().last_line
             ),
-            Some(capture.image),
+            image,
         );
         // Start and revocation share one boundary: pause cannot pass between the
         // consent check and launch. The background emitter never takes this lock.
@@ -370,6 +417,7 @@ impl Service {
             Ok(t) => t,
             Err(e) => {
                 r.preparing = false;
+                r.capture_target = None;
                 r.status.clear();
                 r.error = e.clone();
                 drop(r);
@@ -540,13 +588,20 @@ impl Service {
             }
             let idle = observer::idle_seconds();
             if (3.0..300.0).contains(&idle) && d["observation"]["enabled"] == true {
-                let _ = self.look(None, false);
+                let expected = {
+                    let mut r = self.runtime.lock().unwrap();
+                    if r.perch.is_some_and(|(_, until)| until <= companion::now()) {
+                        r.perch = None;
+                    }
+                    r.perch.map(|(target, _)| target)
+                };
+                let _ = self.look_target(None, false, expected);
             }
         }
         Ok(())
     }
     fn deliver_ambient(&self, d: &Value) {
-        {
+        let expected = {
             let mut runtime = self.runtime.lock().unwrap();
             if runtime
                 .pending_ambient
@@ -556,9 +611,13 @@ impl Service {
                 })
             {
                 runtime.pending_ambient = None;
+                if runtime.job.is_none() && !runtime.preparing {
+                    runtime.capture_target = None;
+                }
                 return;
             }
-        }
+            runtime.capture_target
+        };
         if d["observation"]["enabled"] != true
             || d["observation"]["pausedUntil"].as_u64().unwrap_or(0) > companion::now()
         {
@@ -571,13 +630,18 @@ impl Service {
         {
             return;
         }
-        if !observer::foreground_allowed(d["observation"]["excludeApps"].as_str().unwrap_or("")) {
+        if !observer::foreground_allowed(
+            d["observation"]["excludeApps"].as_str().unwrap_or(""),
+            observer::text_enabled(&d["observation"]),
+            expected,
+        ) {
             return;
         }
         let mut r = self.runtime.lock().unwrap();
         if let Some((line, epoch, expires)) = r.pending_ambient.take() {
             if epoch == r.epoch && expires > companion::now() {
                 r.last_line = line.clone();
+                r.capture_target = None;
                 drop(r);
                 self.say(&line, "wave");
             }
@@ -612,6 +676,7 @@ impl Service {
                                     return Ok(());
                                 }
                                 r.last_line = line.clone();
+                                r.capture_target = None;
                                 drop(r);
                                 self.say(&line, "wave");
                                 self.changed();
@@ -630,6 +695,7 @@ impl Service {
                         .clone()
                         .unwrap_or_else(|| "后台任务已停止".into());
                 }
+                r.capture_target = None;
                 drop(r);
                 self.changed();
                 return Ok(());
@@ -923,6 +989,8 @@ impl Service {
             runtime.stopping = true;
             runtime.epoch += 1;
             runtime.pending_ambient = None;
+            runtime.perch = None;
+            runtime.capture_target = None;
         }
         self.background.shutdown();
     }
@@ -943,7 +1011,8 @@ fn gain_xp(d: &mut Value, n: u64) {
 }
 fn eligible(d: &Value, now: u64, looks: &mut VecDeque<u64>, last: u64) -> bool {
     if d["observation"]["enabled"] != true
-        || d["observation"]["consentVersion"] != 1
+        || !matches!(d["observation"]["consentVersion"].as_u64(), Some(1 | 2))
+        || (d["observation"]["accessibility"] == true && !observer::text_enabled(&d["observation"]))
         || d["observation"]["pausedUntil"].as_u64().unwrap_or(0) > now
         || companion::quiet_hours(d)
     {
@@ -969,6 +1038,69 @@ mod tests {
         assert!(!eligible(&d, 200_000, &mut looks, 0));
         d["observation"]["pausedUntil"] = json!(0);
         assert!(eligible(&d, 200_000, &mut looks, 0));
+    }
+    #[test]
+    fn accessibility_does_not_bypass_consent_interval_or_hourly_budget() {
+        let mut d = companion::defaults();
+        d["settings"]["quietStart"] = json!("");
+        d["observation"]["enabled"] = json!(true);
+        d["observation"]["accessibility"] = json!(true);
+        d["observation"]["consentVersion"] = json!(1);
+        let mut looks = VecDeque::new();
+        assert!(!eligible(&d, 200_000, &mut looks, 0));
+        d["observation"]["consentVersion"] = json!(2);
+        assert!(eligible(&d, 200_000, &mut looks, 0));
+        assert!(!eligible(&d, 200_000, &mut looks, 150_000));
+        looks.extend([150_000; 4]);
+        assert!(!eligible(&d, 200_000, &mut looks, 0));
+    }
+    #[test]
+    fn perch_departure_and_pause_revoke_prepared_content_and_pending_speech() {
+        let root = std::env::temp_dir().join(format!("ojousama-perch-{}", companion::now()));
+        std::fs::create_dir_all(&root).unwrap();
+        let data = Companion::open(root.join("pet-data.json"), None).unwrap();
+        let service = Service::new(
+            data,
+            TaskManager::ephemeral(Arc::new(|_| {})),
+            root.join("work"),
+            root.join("documents"),
+            Arc::new(|_, _| {}),
+        )
+        .unwrap();
+        let target = Target { id: 7, pid: 8 };
+        service.perch_changed(Some(target));
+        // Merely arriving does not enable observation, read the screen, or use budget.
+        service.look_target(None, false, Some(target)).unwrap();
+        {
+            let r = service.runtime.lock().unwrap();
+            assert!(r.looks.is_empty());
+            assert!(!r.preparing);
+            assert_eq!(r.perch.unwrap().0, target);
+        }
+        {
+            let mut r = service.runtime.lock().unwrap();
+            r.preparing = true;
+            r.capture_target = Some(target);
+            r.pending_ambient = Some(("old".into(), r.epoch, companion::now() + 120_000));
+        }
+        let epoch = service.runtime.lock().unwrap().epoch;
+        service.perch_changed(None);
+        {
+            let r = service.runtime.lock().unwrap();
+            assert_eq!(r.epoch, epoch + 1);
+            assert!(r.perch.is_none());
+            assert!(r.capture_target.is_none());
+            assert!(r.pending_ambient.is_none());
+        }
+        service.perch_changed(Some(target));
+        service
+            .apply("screen:pause", json!({"minutes":60}))
+            .unwrap();
+        assert!(service.runtime.lock().unwrap().perch.is_none());
+        service.shutdown();
+        service.perch_changed(Some(target));
+        assert!(service.runtime.lock().unwrap().perch.is_none());
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn hourly_budget_and_interval_are_enforced() {

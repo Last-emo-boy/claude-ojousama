@@ -1,3 +1,4 @@
+import { observationPayload, observationStatus, observationPermissions } from './observation.mjs'
 const $ = id => document.getElementById(id)
 const text = (tag, value, className = '') => { const node = document.createElement(tag); node.textContent = value; node.className = className; return node }
 const date = ts => ts ? new Date(ts).toLocaleString('zh-CN', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''
@@ -38,7 +39,7 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
       <div id="chat-messages" class="chat-messages" aria-live="polite"></div><p id="chat-live" role="status"></p><button id="chat-pending" type="button" hidden>查看需要确认的操作</button><div id="chat-question" class="pending-card" hidden></div><div id="pending-actions" class="item-list"></div>
       <form id="chat-form" class="chat-compose"><label for="chat-text" class="visually-hidden">和大小姐说点什么</label><textarea id="chat-text" required maxlength="20000" placeholder="说点什么，或者交给我一件事…"></textarea><div class="compose-footer"><button id="chat-new" type="button" class="subtle">＋ 新对话</button><button id="chat-stop" type="button" hidden>停止</button><button id="chat-send" class="primary">发送 ↗</button></div></form>
       <div class="quick-actions"><button id="look-open" type="button">看看我在做什么</button><button id="note-open" type="button">贴便签</button><button id="prank-dance" type="button">跳支舞</button></div>
-      <details id="look-controls"><summary>选择观察窗口</summary><p class="muted">选中窗口的画面会交给当前 Codex 模型理解，不读取其他窗口。</p><div class="workspace-row"><select id="look-window" aria-label="观察窗口"></select><button id="look-refresh" type="button">刷新窗口</button><button id="look-now" type="button">看一下</button></div><p id="look-state" role="status"></p></details>
+      <details id="look-controls"><summary>选择观察窗口</summary><p class="muted">选中窗口的画面或已启用的可见文字会交给 Codex 理解，不读取其他窗口。</p><div class="workspace-row"><select id="look-window" aria-label="观察窗口"></select><button id="look-refresh" type="button">刷新窗口</button><button id="look-now" type="button">看一下</button></div><p id="look-state" role="status"></p></details>
     </section>
     <section id="view-todos" class="companion-view" hidden>
       <h2>待办</h2><form id="todo-form" class="inline-compose"><input id="todo-text" aria-label="待办内容" required maxlength="2000" placeholder="记下一件事"><input id="todo-due" type="datetime-local" aria-label="截止时间"><button class="primary">添加</button></form><div id="todo-list" class="item-list"></div>
@@ -55,12 +56,14 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
       <h2>安静地陪着你</h2>
       <form id="observation-form" class="stack-form">
         <label class="check-row"><input id="observe-enabled" type="checkbox">主动观察当前窗口</label>
-        <p class="setting-help">将当前窗口画面交给已配置的 Codex 模型，使用账户额度。截图不存入桌宠；模型服务按其数据政策处理。</p>
+        <label id="observe-text-option" class="check-row"><input id="observe-text" type="checkbox">优先读取可见文字（macOS 辅助功能）</label>
+        <p class="setting-help">窗口内容交给已配置的 Codex 模型理解，使用账户额度；画面和原始文字不写入桌宠记录，模型服务按其数据政策处理。</p>
+        <p id="observe-text-help" class="setting-help">读不到文字时，仅在已授权屏幕访问的情况下使用画面。</p>
         <label class="check-row"><input id="observe-consent" type="checkbox">我了解观察范围及 AI 处理方式，允许安静地运行</label>
         <div class="settings-grid"><label>观察间隔<select id="observe-interval"><option value="60">1 分钟</option><option value="120">2 分钟</option><option value="300">5 分钟</option><option value="900">15 分钟</option></select></label><label>每小时最多互动<input id="observe-max" type="number" min="0" max="12" value="4"></label></div>
         <label>不看的应用或窗口<textarea id="observe-exclude" placeholder="一行一个，例如工作群名称或应用名称"></textarea></label>
         <p class="setting-help">默认跳过密码、支付、私密浏览、聊天和会议窗口。开启后不逐次提示，可随时暂停。</p>
-        <div class="quick-actions"><button class="primary">保存观察设置</button><button id="observe-pause" type="button">暂停 1 小时</button><button id="observe-permission" type="button">授权屏幕访问</button></div><p id="observer-state" role="status"></p>
+        <div class="quick-actions"><button class="primary">保存观察设置</button><button id="observe-pause" type="button">暂停 1 小时</button><button id="observe-permission" type="button">授权屏幕访问</button><button id="observe-accessibility" type="button">授权辅助功能</button><button id="observe-check" type="button">检查权限</button></div><p id="observer-permissions" class="muted"></p><p id="observer-state" role="status"></p>
       </form>
       <h2>AI 与工作目录</h2><form id="companion-settings" class="stack-form"><label>聊天与任务后端<select id="companion-backend"><option value="codex">Codex</option><option value="dsh">DeepSeek Harness（Windows 兼容）</option></select></label><details><summary>DSH 兼容设置</summary><label>DSH 可执行文件<input id="companion-dsh" placeholder="自动查找"></label><label>Profile<input id="companion-profile" placeholder="desktop"></label><label>Provider<input id="companion-provider" placeholder="继承原配置"></label><label>DSH 模型<input id="companion-dsh-model" placeholder="继承原配置"></label></details><label>Codex 可执行文件<input id="companion-codex" placeholder="自动查找"></label><label>模型<input id="companion-model" placeholder="使用 Codex 默认模型"></label><label>观察模型<input id="companion-glance-model" placeholder="与聊天相同"></label><label>工作目录<input id="companion-cwd" placeholder="未设置时只在独立工作目录中运行"></label><label>任务权限<select id="companion-permission"><option value="read-only">只读</option><option value="workspace-write">工作区可写</option><option value="danger-full-access">完全访问（谨慎）</option></select></label><div class="settings-grid"><label>安静开始<input id="quiet-start" type="time"></label><label>安静结束<input id="quiet-end" type="time"></label></div><button class="primary">保存</button><span id="companion-saved" role="status"></span></form><h2>天气与更新</h2><form id="weather-form" class="workspace-row"><input id="weather-city" aria-label="所在城市" placeholder="城市留空时不查询天气"><button>查天气</button></form><p id="weather-state" role="status"></p><button id="update-check" type="button">检查更新</button><p id="update-state" role="status"></p>
     </section>`
@@ -106,9 +109,15 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   submit('goal-form',async()=>{await call('goal:add',{title:$('goal-title').value,detail:$('goal-detail').value,every:$('goal-every').value,at:$('goal-at').value});$('goal-title').value='';$('goal-detail').value=''})
   submit('memory-form',async()=>{await call('memory:add',{text:$('memory-text').value});$('memory-text').value=''})
   bind('pomo-start',()=>call('pomodoro:start',{minutes:Number($('pomo-minutes').value)}));bind('pomo-stop',()=>call('pomodoro:stop'))
-  submit('observation-form',async()=>{await call('observation:set',{enabled:$('observe-enabled').checked,consentVersion:$('observe-consent').checked?1:0,intervalSeconds:Number($('observe-interval').value),maxPerHour:Number($('observe-max').value),quiet:true,excludeApps:$('observe-exclude').value});$('observer-state').textContent='已保存'})
+  submit('observation-form',async()=>{await call('observation:set',observationPayload({enabled:$('observe-enabled').checked,accessibility:$('observe-text').checked,consented:$('observe-consent').checked,intervalSeconds:Number($('observe-interval').value),maxPerHour:Number($('observe-max').value),excludeApps:$('observe-exclude').value}));await refreshObservation()})
   bind('observe-pause',()=>call('screen:pause',{minutes:60}))
-  bind('observe-permission',async()=>{const allowed=await invoke('observer_permission');$('observer-state').textContent=allowed?'屏幕权限已就绪':'请在系统设置中允许屏幕访问，再回到这里。'})
+  const refreshObservation=async()=>{current.observer.capabilities=await invoke('observer_capabilities');render()}
+  bind('observe-permission',async()=>{const allowed=await invoke('observer_permission');await refreshObservation();if(!allowed)$('observer-state').textContent='请在系统设置中允许屏幕访问，再点击检查权限。'})
+  bind('observe-accessibility',async()=>{const allowed=await invoke('accessibility_permission');await refreshObservation();if(!allowed)$('observer-state').textContent='请在系统设置中允许辅助功能，再点击检查权限。'})
+  bind('observe-check',refreshObservation)
+  $('observe-text').addEventListener('change',()=>{$('observe-consent').checked=false})
+  const textSupported=initial.observer.capabilities?.accessibilitySupported??['macos','darwin'].includes(platform)
+  for(const id of ['observe-text-option','observe-text-help','observe-accessibility'])$(id).hidden=!textSupported
   submit('companion-settings',async()=>{await call('settings:set',{backend:$('companion-backend').value,dshExe:$('companion-dsh').value,sourceProfile:$('companion-profile').value||'desktop',provider:$('companion-provider').value,model:$('companion-dsh-model').value,codexExe:$('companion-codex').value.trim(),codexModel:$('companion-model').value.trim(),codexGlanceModel:$('companion-glance-model').value.trim(),cwd:$('companion-cwd').value.trim(),permission:$('companion-permission').value,quietStart:$('quiet-start').value,quietEnd:$('quiet-end').value});$('companion-saved').textContent='已保存'})
   bind('tidy-choose',async()=>{const path=await invoke('choose_workspace');if(path)$('tidy-folder').value=path})
   bind('tidy-preview',()=>call('tidy:preview',{folder:$('tidy-folder').value}))
@@ -148,15 +157,15 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
     list('activity-list',d.activity.slice(0,100),a=>row(a.text,date(a.ts)))
     $('pomo-state').textContent=d.pomodoro.until>Date.now()?`专注至 ${date(d.pomodoro.until)}`:'尚未开始'
     const o=current.observer, conf=d.observation
-    $('observer-state').textContent=conf.pausedUntil>Date.now()?`暂停至 ${date(conf.pausedUntil)}`:o.error||(!o.permission?'尚未授予屏幕访问权限':conf.enabled?'已开启 · 安静运行':'未开启')
+    $('observer-state').textContent=observationStatus(conf,o);$('observer-permissions').textContent=observationPermissions(o.capabilities)
   }
   function fill() {const d=current.data,s=d.settings,o=d.observation
     $('weather-city').value=s.weatherCity||''
     for(const [id,key]of [['motion-wander','wander'],['motion-windows','climbWindows'],['motion-cross','crossScreens'],['motion-fullscreen','hideOnFullscreen']])$(id).checked=s[key]!==false
-    $('observe-enabled').checked=!!o.enabled;$('observe-consent').checked=o.consentVersion===1;$('observe-interval').value=o.intervalSeconds;$('observe-max').value=o.maxPerHour;$('observe-exclude').value=o.excludeApps
+    $('observe-enabled').checked=!!o.enabled;$('observe-text').checked=!!o.accessibility;$('observe-consent').checked=o.accessibility?o.consentVersion===2:[1,2].includes(o.consentVersion);$('observe-interval').value=o.intervalSeconds;$('observe-max').value=o.maxPerHour;$('observe-exclude').value=o.excludeApps
     for(const [id,key]of [['companion-backend','backend'],['companion-dsh','dshExe'],['companion-profile','sourceProfile'],['companion-provider','provider'],['companion-dsh-model','model'],['companion-codex','codexExe'],['companion-model','codexModel'],['companion-glance-model','codexGlanceModel'],['companion-cwd','cwd'],['companion-permission','permission'],['quiet-start','quietStart'],['quiet-end','quietEnd']])$(id).value=s[key]||''
   }
-  function select(name) {if(!tabs.some(([n])=>n===name))return;tab=name;for(const [n]of tabs){const node=$(`view-${n}`);node.hidden=n!==name;nav.querySelector(`[data-tab="${n}"]`).setAttribute('aria-current',String(n===name))}const label=tabs.find(([n])=>n===name)[1];$('companion-title').textContent=name==='chat'?'今天也一起。':label;$('companion-subtitle').textContent=name==='chat'?`${current.data.settings.backend==='dsh'?'DeepSeek Harness':'Codex'} · 随时聊聊`:name==='actions'?'随心动一动，安静陪着你。':'Claude Ojousama';if(name==='actions'){fill();refreshMotion().catch(showError)}if(name==='settings'){fill();invoke('observer_status').then(permission=>{current.observer.permission=permission;render()}).catch(showError)}render()}
+  function select(name) {if(!tabs.some(([n])=>n===name))return;tab=name;for(const [n]of tabs){const node=$(`view-${n}`);node.hidden=n!==name;nav.querySelector(`[data-tab="${n}"]`).setAttribute('aria-current',String(n===name))}const label=tabs.find(([n])=>n===name)[1];$('companion-title').textContent=name==='chat'?'今天也一起。':label;$('companion-subtitle').textContent=name==='chat'?`${current.data.settings.backend==='dsh'?'DeepSeek Harness':'Codex'} · 随时聊聊`:name==='actions'?'随心动一动，安静陪着你。':'Claude Ojousama';if(name==='actions'){fill();refreshMotion().catch(showError)}if(name==='settings'){fill();refreshObservation().catch(showError)}render()}
   fill();select(tab)
   return { motionUpdated(value){if(motionValue){motionValue.motion=value;renderMotion()}}, update(value){current=value;render()}, select, taskUpdated(tasks){const task=tasks.find(t=>t.id===current.chatTask);$('chat-live').textContent=task ? task.output||task.activity : ''; $('chat-send').disabled=!!current.chatTask; $('chat-stop').hidden=!current.chatTask; $('chat-pending').hidden=!task?.pending} }
 }

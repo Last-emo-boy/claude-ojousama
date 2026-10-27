@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod accessibility;
 mod backend;
 mod companion;
 mod desktop;
@@ -419,11 +420,20 @@ async fn companion_command(
     Ok(result)
 }
 #[tauri::command]
-async fn observer_windows(window: WebviewWindow) -> Result<Vec<Value>, String> {
+async fn observer_windows(
+    window: WebviewWindow,
+    state: tauri::State<'_, State>,
+) -> Result<Vec<Value>, String> {
     panel_only(&window)?;
-    tauri::async_runtime::spawn_blocking(observer::choices)
-        .await
-        .map_err(|e| e.to_string())?
+    let config = state.service.data.snapshot()["observation"].clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        observer::choices(
+            config["excludeApps"].as_str().unwrap_or(""),
+            observer::text_enabled(&config),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 fn observer_status(window: WebviewWindow) -> Result<bool, String> {
@@ -434,6 +444,21 @@ fn observer_status(window: WebviewWindow) -> Result<bool, String> {
 fn observer_permission(window: WebviewWindow) -> Result<bool, String> {
     panel_only(&window)?;
     Ok(observer::request_permission())
+}
+#[tauri::command]
+fn observer_capabilities(
+    window: WebviewWindow,
+    state: tauri::State<State>,
+) -> Result<Value, String> {
+    panel_only(&window)?;
+    Ok(observer::capabilities(
+        &state.service.data.snapshot()["observation"],
+    ))
+}
+#[tauri::command]
+fn accessibility_permission(window: WebviewWindow) -> Result<bool, String> {
+    panel_only(&window)?;
+    Ok(accessibility::request_permission())
 }
 #[tauri::command]
 async fn look_now(
@@ -514,6 +539,7 @@ fn drag_begin(
     motion.begin(cursor);
     let snapshot = motion.clone();
     drop(motion);
+    state.service.perch_changed(None);
     trace_motion(&window, &snapshot);
     window
         .emit("motion:update", snapshot)
@@ -876,6 +902,7 @@ fn start_motion(
         let mut hidden_for_fullscreen = false;
         let mut last_error = String::new();
         let mut sequence = companion::now() ^ std::process::id() as u64;
+        let mut observed_perch = None;
         while !stop.load(Ordering::Relaxed) {
             let now = Instant::now();
             let dt = now.duration_since(last).as_secs_f64().clamp(0.001, 0.05);
@@ -1143,6 +1170,24 @@ fn start_motion(
                 trace_motion(&window, &snapshot);
                 let _ = window.emit("motion:update", snapshot.clone());
             }
+            if same_owner {
+                let target = if snapshot.phase == "perched" && !snapshot.paused {
+                    snapshot.seat.as_ref().map(|s| accessibility::Target {
+                        id: s.window.id as u32,
+                        pid: s.window.pid,
+                    })
+                } else {
+                    None
+                };
+                if target != observed_perch {
+                    window
+                        .app_handle()
+                        .state::<State>()
+                        .service
+                        .perch_changed(target);
+                    observed_perch = target;
+                }
+            }
             if visible {
                 let hit = snapshot.phase == "dragging" || inside;
                 if ignored == hit && window.set_ignore_cursor_events(!hit).is_ok() {
@@ -1375,6 +1420,8 @@ fn main() {
             observer_windows,
             observer_status,
             observer_permission,
+            observer_capabilities,
+            accessibility_permission,
             look_now,
             note_show,
             note_toggle,

@@ -230,3 +230,22 @@ test('pointer cancellation retains the last move sample and end is idempotent', 
   assert.deepEqual(calls[1], ['drag_move', { x: 15, y: 20 }])
   assert.equal(calls.filter(call => call[0] === 'drag_end').length, 1)
 })
+
+
+test('visible text needs renewed consent while image-only consent stays compatible', async () => {
+  const { observationPayload } = await import('./observation.mjs')
+  const image = observationPayload({ enabled: true, accessibility: false, consented: true })
+  assert.equal(image.consentVersion, 1)
+  const text = observationPayload({ enabled: true, accessibility: true, consented: true })
+  assert.equal(text.consentVersion, 2)
+  assert.equal(text.accessibility, true)
+  assert.equal(observationPayload({ enabled: true, accessibility: true, consented: false }).consentVersion, 0)
+})
+test('text-ready observer is usable without screen recording and disabled state stays clear', async () => {
+  const { observationStatus, observationPermissions } = await import('./observation.mjs')
+  const observer = { permission: false, capabilities: { ready: true, screenSupported: true, screenPermission: false, accessibilitySupported: true, accessibilityPermission: true } }
+  assert.equal(observationStatus({ enabled: true }, observer), '已开启 · 安静运行')
+  assert.equal(observationPermissions(observer.capabilities), '画面未授权 · 读字已授权')
+  assert.equal(observationStatus({ enabled: false }, observer), '未开启主动观察')
+  assert.equal(observationStatus({ enabled: true }, { capabilities: { ready: false, screenSupported: false } }), '当前桌面需系统主动共享，后台观察不可用')
+})

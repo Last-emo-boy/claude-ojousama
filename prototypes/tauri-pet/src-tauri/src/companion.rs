@@ -22,7 +22,7 @@ pub fn defaults() -> Value {
         data["settings"]["backend"] = json!("dsh");
         data["settings"]["permission"] = json!("workspace-write");
     }
-    data["observation"] = json!({"enabled":false,"consentVersion":0,"intervalSeconds":120,"maxPerHour":4,"quiet":true,"excludeApps":"","pausedUntil":0});
+    data["observation"] = json!({"enabled":false,"consentVersion":0,"accessibility":false,"intervalSeconds":120,"maxPerHour":4,"quiet":true,"excludeApps":"","pausedUntil":0});
     data["pendingActions"] = json!([]);
     data["backgroundTasks"] = json!([]);
     data["pomodoro"] = json!({"until":0,"minutes":25});
@@ -297,15 +297,17 @@ fn apply(d: &mut Value, command: &str, args: Value) -> Result<Value, String> {
         }
         "observation:set" => {
             let enabled = args["enabled"].as_bool().unwrap_or(false);
-            if enabled && args["consentVersion"] != 1 {
-                return Err("请先确认观察范围和 AI 处理说明".into());
+            let accessibility = args["accessibility"].as_bool().unwrap_or(false);
+            let consent = args["consentVersion"].as_u64().unwrap_or(0);
+            if (enabled && !matches!(consent, 1 | 2)) || (accessibility && consent != 2) {
+                return Err("请先确认观察范围和 AI 处理说明；辅助功能读字需重新确认".into());
             }
             let interval = args["intervalSeconds"].as_u64().unwrap_or(120);
             let max = args["maxPerHour"].as_u64().unwrap_or(4);
             if !(30..=3600).contains(&interval) || max > 12 {
                 return Err("观察间隔需为 30–3600 秒，每小时最多 12 次互动".into());
             }
-            d["observation"] = json!({"enabled":enabled,"consentVersion":if enabled{1}else{0},"intervalSeconds":interval,"maxPerHour":max,"quiet":args["quiet"].as_bool().unwrap_or(true),"excludeApps":args["excludeApps"].as_str().unwrap_or(""),"pausedUntil":d["observation"]["pausedUntil"]});
+            d["observation"] = json!({"enabled":enabled,"consentVersion":if enabled || accessibility{consent}else{0},"accessibility":accessibility,"intervalSeconds":interval,"maxPerHour":max,"quiet":args["quiet"].as_bool().unwrap_or(true),"excludeApps":args["excludeApps"].as_str().unwrap_or(""),"pausedUntil":d["observation"]["pausedUntil"]});
             Ok(d["observation"].clone())
         }
         "screen:pause" => {
@@ -356,6 +358,36 @@ mod tests {
         )
         .unwrap();
         assert_eq!(d["observation"]["quiet"], true);
+    }
+    #[test]
+    fn accessibility_requires_new_consent_without_changing_existing_image_consent() {
+        let mut d = defaults();
+        assert_eq!(d["observation"]["accessibility"], false);
+        apply(
+            &mut d,
+            "observation:set",
+            json!({"enabled":true,"consentVersion":1}),
+        )
+        .unwrap();
+        assert_eq!(d["observation"]["consentVersion"], 1);
+        assert_eq!(d["observation"]["accessibility"], false);
+        assert!(apply(
+            &mut d,
+            "observation:set",
+            json!({"enabled":true,"accessibility":true,"consentVersion":1})
+        )
+        .is_err());
+        apply(
+            &mut d,
+            "observation:set",
+            json!({"enabled":true,"accessibility":true,"consentVersion":2}),
+        )
+        .unwrap();
+        assert_eq!(d["observation"]["consentVersion"], 2);
+        assert_eq!(d["observation"]["accessibility"], true);
+        apply(&mut d, "observation:set", json!({"enabled":false})).unwrap();
+        assert_eq!(d["observation"]["consentVersion"], 0);
+        assert_eq!(d["observation"]["accessibility"], false);
     }
     #[test]
     fn legacy_import_is_a_copy_and_keeps_settings_and_messages() {
