@@ -79,6 +79,8 @@ test('motion owns the drag pose without overwriting actual task state', () => {
   assert.equal(result.label, '进行中')
   assert.equal(result.active, true)
   assert.equal(presentation(task(2, 'working'), 'settled').animation, 'typing')
+  assert.equal(presentation(task(2, 'working'), 'perched').animation, 'sit')
+  assert.equal(presentation(task(2, 'working'), 'perched').active, true)
 })
 
 test('failure exposes real error and unknown states never imply success', () => {

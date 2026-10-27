@@ -36,7 +36,7 @@ export function presentation(task, motion = 'settled') {
   const [label, animation, fallback] = STATUS[task?.status] || ['待命', 'idle', '有事叫我']
   return {
     label,
-    animation: motion === 'dragging' || motion === 'flying' ? 'dangle' : animation,
+    animation: motion === 'dragging' || motion === 'flying' ? 'dangle' : motion === 'perched' ? 'sit' : animation,
     text: task?.status === 'failed' ? task.error || fallback : task?.activity || fallback,
     active: isActive(task),
   }

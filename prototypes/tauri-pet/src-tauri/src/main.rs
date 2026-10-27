@@ -2,6 +2,7 @@
 
 mod backend;
 mod motion;
+mod windows;
 
 use backend::{StartRequest, TaskManager, TaskView};
 use motion::Motion;
@@ -294,6 +295,81 @@ fn drag_end(window: WebviewWindow, state: tauri::State<State>) -> Result<(), Str
         .map_err(|e| e.to_string())
 }
 
+fn window_seats(window: &WebviewWindow, scale: f64) -> Result<Vec<windows::Seat>, String> {
+    let monitor = window
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or("没有可用的显示器")?;
+    let area = monitor.work_area();
+    Ok(windows::seats(&windows::visible(scale)?, scale)
+        .into_iter()
+        .filter_map(|mut seat| {
+            if seat.top < area.position.y as f64 + 128.0 * scale
+                || seat.top > area.position.y as f64 + area.size.height as f64 - 40.0 * scale
+            {
+                return None;
+            }
+            seat.left = seat.left.max(area.position.x as f64 + 8.0 * scale);
+            seat.right = seat
+                .right
+                .min(area.position.x as f64 + area.size.width as f64 - 8.0 * scale);
+            (seat.right - seat.left >= 60.0 * scale).then_some(seat)
+        })
+        .collect())
+}
+
+fn toggle_perch(app: &tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<State>();
+    if !state.positionable {
+        return Err("当前桌面不支持窗口停靠，请使用 X11 或 XWayland".into());
+    }
+    let window = app.get_webview_window("pet").ok_or("桌宠窗口不可用")?;
+    let current = state.motion.lock().unwrap().clone();
+    if current.phase == "dragging" {
+        return Err("请先放下桌宠".into());
+    }
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let size = window.outer_size().map_err(|e| e.to_string())?;
+    let seats = if current.phase == "perched" {
+        Vec::new()
+    } else {
+        window_seats(&window, scale)?
+    };
+    let target = seats.into_iter().min_by(|a, b| {
+        let centre = current.x + size.width as f64 / 2.0;
+        let score =
+            |s: &windows::Seat| (centre - centre.clamp(s.left, s.right)).abs() + s.top * 0.05;
+        score(a).total_cmp(&score(b))
+    });
+    let mut m = state.motion.lock().unwrap();
+    if current.phase == "perched" {
+        m.leave();
+    } else {
+        let seat = target.ok_or("没有可坐的窗口上沿，请将一个普通窗口移到屏幕中部")?;
+        m.scale = scale;
+        m.sit(seat, (size.width as f64, size.height as f64));
+    }
+    let snapshot = m.clone();
+    drop(m);
+    window
+        .set_position(PhysicalPosition::new(
+            snapshot.x.round() as i32,
+            snapshot.y.round() as i32,
+        ))
+        .map_err(|e| e.to_string())?;
+    trace_motion(&window, &snapshot);
+    window
+        .emit("motion:update", snapshot)
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
+fn perch_toggle(window: WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
+    if window.label() != "pet" {
+        return Err("请从桌宠操作窗口停靠".into());
+    }
+    toggle_perch(&app)
+}
+
 #[cfg(target_os = "macos")]
 fn left_pressed() -> bool {
     #[link(name = "CoreGraphics", kind = "framework")]
@@ -361,6 +437,9 @@ fn start_motion(
     std::thread::spawn(move || {
         let mut last = Instant::now();
         let mut ignored = false;
+        let mut visible_seats = Vec::new();
+        let mut windows_at = Instant::now() - Duration::from_secs(1);
+        let mut last_window_error = String::new();
         while !stop.load(Ordering::Relaxed) {
             let now = Instant::now();
             let dt = now.duration_since(last).as_secs_f64().clamp(0.001, 0.05);
@@ -372,11 +451,31 @@ fn start_motion(
             let scale = window.scale_factor().unwrap_or(1.0);
             let monitor = window.current_monitor().ok().flatten();
             let size = window.outer_size().ok();
-            let check_button = motion.lock().unwrap().phase == "dragging";
+            let observed_phase = motion.lock().unwrap().phase.clone();
+            if matches!(observed_phase.as_str(), "flying" | "perched")
+                && windows_at.elapsed()
+                    >= Duration::from_millis(if observed_phase == "flying" { 100 } else { 400 })
+            {
+                windows_at = Instant::now();
+                match window_seats(&window, scale) {
+                    Ok(seats) => {
+                        visible_seats = seats;
+                        last_window_error.clear();
+                    }
+                    Err(error) => {
+                        visible_seats.clear();
+                        if error != last_window_error {
+                            let _ = window.emit("pet:error", error.clone());
+                            last_window_error = error;
+                        }
+                    }
+                }
+            }
+            let check_button = observed_phase == "dragging";
             let pressed = check_button && left_pressed();
             let mut m = motion.lock().unwrap();
             let previous = m.phase.clone();
-            let moving = previous != "settled";
+            let moving = previous == "flying";
             if previous == "dragging" {
                 // Pointer capture is the primary input. Only a hardware press that was
                 // actually observed may trigger the outside-window release backstop.
@@ -386,7 +485,19 @@ fn start_motion(
                     m.release();
                 }
             }
+            if m.phase == "perched" {
+                let centre = m.x + size.map(|s| s.width as f64 / 2.0).unwrap_or(180.0 * scale);
+                let valid = m
+                    .seat
+                    .as_ref()
+                    .is_some_and(|seat| seat.remains_visible(&visible_seats, centre, scale));
+                if !valid {
+                    m.leave();
+                }
+            }
             if m.phase == "flying" {
+                let previous_feet =
+                    m.y + size.map(|s| s.height as f64).unwrap_or(340.0 * scale) - 5.0 * scale;
                 if let (Some(monitor), Some(size)) = (monitor, size) {
                     let area = monitor.work_area();
                     let left = area.position.x as f64;
@@ -394,11 +505,16 @@ fn start_motion(
                     let right = (left + area.size.width as f64 - size.width as f64).max(left);
                     let bottom = (top + area.size.height as f64 - size.height as f64).max(top);
                     m.step(dt, (left, top, right, bottom));
+                    m.land(
+                        &visible_seats,
+                        previous_feet,
+                        (size.width as f64, size.height as f64),
+                    );
                 }
             }
             let snapshot = m.clone();
             drop(m);
-            if moving && snapshot.phase != "dragging" {
+            if moving || snapshot.phase == "flying" {
                 let _ = window.set_position(PhysicalPosition::new(
                     snapshot.x.round() as i32,
                     snapshot.y.round() as i32,
@@ -408,7 +524,7 @@ fn start_motion(
                 trace_motion(&window, &snapshot);
                 let _ = window.emit("motion:update", snapshot.clone());
             }
-            let in_motion = snapshot.phase != "settled";
+            let in_motion = matches!(snapshot.phase.as_str(), "dragging" | "flying");
             if window.is_visible().unwrap_or(false) {
                 if let (Some(cursor), Some(position)) = (cursor, position) {
                     let x = (cursor.x - position.x as f64) / scale;
@@ -510,8 +626,10 @@ fn main() {
             });
             let show = MenuItem::with_id(app, "show", "打开任务", true, None::<&str>)?;
             let show_pet = MenuItem::with_id(app, "pet", "显示桌宠", true, None::<&str>)?;
+            let perch =
+                MenuItem::with_id(app, "perch", "坐上窗口 / 下来", positionable, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出原型", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &show_pet, &quit])?;
+            let menu = Menu::with_items(app, &[&show, &show_pet, &perch, &quit])?;
             let mut tray = TrayIconBuilder::new()
                 .tooltip("Ojousama Lite")
                 .menu(&menu)
@@ -522,6 +640,11 @@ fn main() {
                     "pet" => {
                         if let Some(window) = app.get_webview_window("pet") {
                             let _ = window.show();
+                        }
+                    }
+                    "perch" => {
+                        if let Err(error) = toggle_perch(app) {
+                            let _ = app.emit("pet:error", error);
                         }
                     }
                     "quit" => app.exit(0),
@@ -561,7 +684,8 @@ fn main() {
             set_reduced_motion,
             drag_begin,
             drag_move,
-            drag_end
+            drag_end,
+            perch_toggle
         ])
         .build(tauri::generate_context!())
         .expect("启动轻量桌宠失败");

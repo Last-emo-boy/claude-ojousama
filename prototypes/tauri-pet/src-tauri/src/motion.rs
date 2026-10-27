@@ -1,3 +1,4 @@
+use crate::windows::Seat;
 use serde::Serialize;
 use std::time::{Duration, Instant};
 
@@ -9,6 +10,7 @@ pub struct Motion {
     pub y: f64,
     pub vx: f64,
     pub vy: f64,
+    pub seat: Option<Seat>,
     #[serde(skip)]
     pub offset: (f64, f64),
     #[serde(skip)]
@@ -29,6 +31,7 @@ impl Motion {
             y,
             vx: 0.0,
             vy: 0.0,
+            seat: None,
             offset: (0.0, 0.0),
             reduced: false,
             scale: 1.0,
@@ -38,6 +41,7 @@ impl Motion {
     }
 
     pub fn begin(&mut self, cursor: (f64, f64)) {
+        self.seat = None;
         self.offset = (cursor.0 - self.x, cursor.1 - self.y);
         self.phase = "dragging".into();
         self.vx = 0.0;
@@ -104,11 +108,97 @@ impl Motion {
             }
         }
     }
+
+    pub fn sit(&mut self, seat: Seat, size: (f64, f64)) {
+        self.x = (self.x + size.0 / 2.0).clamp(seat.left, seat.right) - size.0 / 2.0;
+        // The original character's sit sheet hangs 36 sprite pixels below the edge.
+        self.y = seat.top - (size.1 - 5.0 * self.scale) + 36.0 * 1.35 * self.scale;
+        self.vx = 0.0;
+        self.vy = 0.0;
+        self.phase = "perched".into();
+        self.seat = Some(seat);
+    }
+
+    pub fn leave(&mut self) {
+        self.seat = None;
+        self.phase = "flying".into();
+        self.vx = 0.0;
+        self.vy = 50.0 * self.scale;
+    }
+
+    pub fn land(&mut self, seats: &[Seat], previous_feet: f64, size: (f64, f64)) -> bool {
+        if self.phase != "flying" || self.vy < 0.0 {
+            return false;
+        }
+        let centre = self.x + size.0 / 2.0;
+        let feet = self.y + size.1 - 5.0 * self.scale;
+        let seat = seats
+            .iter()
+            .filter(|s| {
+                centre >= s.left
+                    && centre <= s.right
+                    && s.top >= previous_feet - 6.0 * self.scale
+                    && s.top <= feet + 3.0 * self.scale
+            })
+            .min_by(|a, b| a.top.total_cmp(&b.top))
+            .cloned();
+        if let Some(seat) = seat {
+            self.sit(seat, size);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::windows::WindowRect;
+    fn seat() -> Seat {
+        Seat {
+            window: WindowRect {
+                id: 1,
+                pid: 1,
+                x: 50.0,
+                y: 500.0,
+                width: 800.0,
+                height: 500.0,
+            },
+            left: 82.0,
+            right: 818.0,
+            top: 500.0,
+        }
+    }
+    #[test]
+    fn falling_crosses_window_edge_and_sits_with_legs_below_it() {
+        let mut m = Motion::new(200.0, 140.0);
+        m.phase = "flying".into();
+        m.vy = 900.0;
+        let before = m.y + 335.0;
+        m.step(0.04, (0.0, 0.0, 1200.0, 1000.0));
+        assert!(m.land(&[seat()], before, (360.0, 340.0)));
+        assert_eq!(m.phase, "perched");
+        assert!((m.y - (500.0 - 335.0 + 48.6)).abs() < 0.01);
+        assert_eq!(m.seat.as_ref().unwrap().window.id, 1);
+        m.leave();
+        assert!(
+            !m.land(&[seat()], m.y + 335.0, (360.0, 340.0)),
+            "leaving must not land immediately on the same edge"
+        );
+        m.begin((m.x + 100.0, m.y + 100.0));
+        assert!(m.seat.is_none());
+    }
+    #[test]
+    fn no_landing_while_rising_or_outside_visible_span() {
+        let mut m = Motion::new(1000.0, 200.0);
+        m.phase = "flying".into();
+        m.vy = 100.0;
+        assert!(!m.land(&[seat()], 450.0, (360.0, 340.0)));
+        m.x = 200.0;
+        m.vy = -100.0;
+        assert!(!m.land(&[seat()], 450.0, (360.0, 340.0)));
+    }
     #[test]
     fn final_identical_pointer_sample_preserves_fling_but_a_held_pointer_does_not() {
         let mut m = Motion::new(0.0, 0.0);

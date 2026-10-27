@@ -84,6 +84,7 @@ function mountPet() {
       <p id="pet-error" class="pet-error" role="alert"></p>
       <div class="pet-actions">
         <button id="pet-stop" class="danger hidden" type="button">停止</button>
+        <button id="pet-perch" type="button">坐上窗口</button>
         <button id="pet-open" type="button">新任务</button>
       </div>
     </section>
@@ -96,6 +97,11 @@ function mountPet() {
   spriteContext.setTransform(ratio, 0, 0, ratio, 0, 0)
   spriteContext.imageSmoothingEnabled = false
   $('pet-open').addEventListener('click', event => action(event.currentTarget, () => invoke('show_panel')))
+  $('pet-perch').addEventListener('click', event => action(event.currentTarget, async () => {
+    await invoke('perch_toggle')
+    state.error = ''
+    renderPet()
+  }))
   $('pet-stop').addEventListener('click', event => {
     const task = currentTask(state.tasks)
     if (isActive(task)) action(event.currentTarget, () => invoke('task_cancel', { id: task.id }))
@@ -153,7 +159,7 @@ async function loadSprites() {
   const response = await fetch('./assets/sprites/manifest.json')
   if (!response.ok) throw new Error('角色资源未准备好，请重新构建原型')
   const manifest = await response.json()
-  await Promise.all(['idle', 'thinking', 'typing', 'dangle', 'happy', 'error', 'wave'].map(async name => {
+  await Promise.all(['idle', 'thinking', 'typing', 'dangle', 'happy', 'error', 'wave', 'sit'].map(async name => {
     const definition = manifest.anims[name]
     if (!definition) throw new Error(`缺少角色动作：${name}`)
     const image = new Image()
@@ -225,6 +231,8 @@ function renderPet() {
   $('pet-bubble').classList.toggle('has-error', !!state.error)
   $('pet-stop').classList.toggle('hidden', !info.active)
   $('pet-open').textContent = task ? '展开' : '新任务'
+  $('pet-perch').textContent = state.motion.phase === 'perched' ? '下来' : '坐上窗口'
+  $('pet-perch').classList.toggle('hidden', !state.positionable)
   $('sprite').classList.toggle('dragging', state.motion.phase === 'dragging')
   $('sprite').setAttribute('aria-label', state.positionable ? '桌宠，点击打开任务，拖动后松手抛出' : '桌宠，点击打开任务')
   if (activeAnimation !== info.animation || reduceMotion.matches) drawSprite()
@@ -494,7 +502,8 @@ async function boot() {
   if (!window.__TAURI__) throw new Error('请从 Ojousama Lite 应用打开这个界面')
   await window.__TAURI__.event.listen('task:update', event => acceptTask(event.payload))
   if (view === 'pet') {
-    await window.__TAURI__.event.listen('motion:update', event => {
+    await window.__TAURI__.event.listen('pet:error', event => showError(event.payload))
+  await window.__TAURI__.event.listen('motion:update', event => {
       state.motion = event.payload
       renderPet()
     })

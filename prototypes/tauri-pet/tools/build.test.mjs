@@ -12,7 +12,7 @@ function fixture(run) {
   try { return run(dir) } finally { fs.rmSync(dir, { recursive: true, force: true }) }
 }
 
-test('prepare copies seven existing sprite sheets, original manifest and icon only', () => fixture(dir => {
+test('prepare copies selected existing sprite sheets, original manifest and icon only', () => fixture(dir => {
   const repository = path.join(dir, 'repository')
   const source = path.join(repository, 'assets', 'sprites')
   const root = path.join(repository, 'prototypes', 'tauri-pet')
