@@ -1,0 +1,5 @@
+/web/assets/
+/src-tauri/target/
+/src-tauri/gen/
+/src-tauri/icons/
+/node_modules/

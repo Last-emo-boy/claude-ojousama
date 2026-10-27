@@ -1,0 +1,27 @@
+[package]
+name = "ojousama-lite"
+version = "0.1.0"
+description = "Lightweight desktop companion prototype"
+edition = "2021"
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.1", features = ["macos-private-api", "tray-icon"] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+codegen-units = 1
+panic = "abort"
+
+# Host proc-macro dylibs must retain LINKEDIT alignment on the macOS 27 toolchain.
+# They are build-time only; the shipped executable remains stripped.
+[profile.release.build-override]
+strip = false
