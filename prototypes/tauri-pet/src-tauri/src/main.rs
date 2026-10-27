@@ -93,8 +93,13 @@ fn panel(app: &tauri::AppHandle) -> Result<(), String> {
     window.set_focus().map_err(|e| e.to_string())
 }
 #[tauri::command]
-fn show_panel(app: tauri::AppHandle) -> Result<(), String> {
-    panel(&app)
+fn show_panel(app: tauri::AppHandle, tab: Option<String>) -> Result<(), String> {
+    panel(&app)?;
+    if let Some(tab) = tab {
+        app.emit_to("panel", "panel:tab", tab)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 #[tauri::command]
 fn hide_panel(window: WebviewWindow) -> Result<(), String> {
@@ -798,9 +803,9 @@ fn main() {
                 "panel",
                 WebviewUrl::App("index.html?view=panel".into()),
             )
-            .title("Ojousama Lite · 任务")
-            .inner_size(680.0, 720.0)
-            .min_inner_size(520.0, 540.0)
+            .title("Claude Ojousama")
+            .inner_size(840.0, 720.0)
+            .min_inner_size(560.0, 540.0)
             .visible(false)
             .build()?;
             let pet = WebviewWindowBuilder::new(

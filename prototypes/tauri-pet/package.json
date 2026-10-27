@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "prepare": "node tools/prepare.mjs",
-    "test": "node --test web/model.test.mjs tools/build.test.mjs",
+    "test": "node --test web/model.test.mjs web/bubble.test.mjs tools/build.test.mjs",
     "build": "node tools/build.mjs",
     "install-app": "node tools/install.mjs"
   },

@@ -268,22 +268,21 @@ impl Service {
             return self.goal(args["id"].clone());
         }
         if command == "prank" {
+            if self.tasks.list().iter().any(|task| !done(task)) {
+                return Err("正在处理任务，完成后再试这个动作".into());
+            }
             let name = args["name"].as_str().unwrap_or("dance");
             if ![
                 "dance", "wave", "happy", "magic", "pet", "gift", "stretch", "squish", "laugh",
-                "sleep",
+                "sleep", "walk", "read", "magnify", "water", "nap", "climb", "ledge",
             ]
             .contains(&name)
             {
                 return Err("未知动作".into());
             }
-            self.say(
-                if name == "dance" {
-                    "让我活动一下～"
-                } else {
-                    "我在这儿呢。"
-                },
-                name,
+            (self.emit)(
+                "companion:bubble",
+                json!({"text":"","animation":name,"until":companion::now()+5000}),
             );
             return Ok(Value::Null);
         }

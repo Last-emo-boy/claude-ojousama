@@ -12,7 +12,7 @@ function fixture(run) {
   try { return run(dir) } finally { fs.rmSync(dir, { recursive: true, force: true }) }
 }
 
-test('prepare copies selected existing sprite sheets, original manifest and icon only', () => fixture(dir => {
+test('prepare preserves original animations and adds the new generated action atlas', () => fixture(dir => {
   const repository = path.join(dir, 'repository')
   const source = path.join(repository, 'assets', 'sprites')
   const root = path.join(repository, 'prototypes', 'tauri-pet')
@@ -20,11 +20,19 @@ test('prepare copies selected existing sprite sheets, original manifest and icon
   for (const name of [...SPRITES, 'unused']) fs.writeFileSync(path.join(source, `${name}.png`), `fixture-${name}`)
   const manifest = JSON.stringify({ anims: { idle: { frames: 4 }, unused: { frames: 3 } } })
   fs.writeFileSync(path.join(source, 'manifest.json'), manifest)
+  const extra=path.join(repository,'assets','sprites-extra')
+  fs.mkdirSync(extra,{recursive:true})
+  fs.writeFileSync(path.join(extra,'manifest.json'),JSON.stringify({anims:{climb:{file:'climb.png',frames:4,displayHeight:174}}}))
+  fs.writeFileSync(path.join(extra,'climb.png'),'climb fixture')
   fs.writeFileSync(path.join(repository, 'assets', 'icon-256.png'), 'icon fixture')
   fs.writeFileSync(path.join(repository, 'assets', 'icon.ico'), 'Windows icon fixture')
   const output = prepareAssets({ root, repository })
-  assert.deepEqual(fs.readdirSync(output.sprites).sort(), [...SPRITES.map(name => `${name}.png`), 'manifest.json'].sort())
-  assert.equal(fs.readFileSync(path.join(output.sprites, 'manifest.json'), 'utf8'), manifest)
+  assert.deepEqual(fs.readdirSync(output.sprites).sort(), [...SPRITES.map(name => `${name}.png`), 'climb.png', 'manifest.json'].sort())
+  const prepared=JSON.parse(fs.readFileSync(path.join(output.sprites, 'manifest.json'), 'utf8'))
+  assert.deepEqual(prepared.anims.idle,{frames:4})
+  assert.equal(prepared.anims.climb.displayHeight,174)
+  assert.equal(fs.readFileSync(path.join(output.sprites,'climb.png'),'utf8'),'climb fixture')
+  assert.equal(fs.readFileSync(path.join(source,'manifest.json'),'utf8'),manifest)
   assert.equal(fs.readFileSync(output.icon, 'utf8'), 'icon fixture')
   assert.equal(fs.readFileSync(path.join(root, 'src-tauri', 'icons', 'icon.ico'), 'utf8'), 'Windows icon fixture')
   assert.equal(fs.readFileSync(path.join(output.sprites, 'idle.png'), 'utf8'), 'fixture-idle')

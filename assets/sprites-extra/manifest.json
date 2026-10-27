@@ -1,0 +1,29 @@
+{
+  "anims": {
+    "climb": {
+      "file": "climb.png",
+      "frames": 4,
+      "w": 543,
+      "h": 724,
+      "fps": 5,
+      "loop": true,
+      "displayHeight": 204,
+      "offsetY": 18
+    },
+    "ledge": {
+      "file": "ledge.png",
+      "frames": 4,
+      "w": 543,
+      "h": 724,
+      "fps": 4,
+      "loop": false,
+      "displayHeight": 204,
+      "offsetY": 18
+    }
+  },
+  "source": "Generated with built-in image_gen from the original wave sprite, preserving character identity and transparent background.",
+  "prompts": {
+    "climb": "Four-frame right-facing invisible-window climbing loop, equal horizontal cells, exact original orange-haired chibi identity, real alpha, no wall or labels.",
+    "ledge": "Four-frame pull-up onto an invisible ledge, ending seated; same character and scale, equal horizontal cells, real alpha, no ledge or labels."
+  }
+}

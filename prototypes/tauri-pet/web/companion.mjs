@@ -1,6 +1,18 @@
 const $ = id => document.getElementById(id)
 const text = (tag, value, className = '') => { const node = document.createElement(tag); node.textContent = value; node.className = className; return node }
 const date = ts => ts ? new Date(ts).toLocaleString('zh-CN', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''
+const icons = {
+  chat: '<path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z"/>',
+  todos: '<path d="m4 12 4 4 8-8m-1 8 5-5M4 4h10"/>',
+  goals: '<path d="M4 22V3m0 1c5-5 11 5 16 0v12c-5 5-11-5-16 0"/>',
+  tasks: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="m7 8 4 4-4 4m6 0h4"/>',
+  actions: '<path d="M7 3c-4 0-4 7-2 9 1 1 4 1 4-1V7c0-2 0-4-2-4Zm10 6c4 0 4 7 2 9-1 1-4 1-4-1v-4c0-2 0-4 2-4Z"/>',
+  growth: '<path d="M12 22v-9m0 3C3 16 2 10 3 4c6 0 10 4 9 12Zm0-3C12 6 18 3 22 3c0 5-4 10-10 10Z"/>',
+  activity: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  settings: '<path d="M4 5h16M4 12h16M4 19h16"/><circle cx="9" cy="5" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="8" cy="19" r="2"/>',
+}
+const navIcon = name => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${icons[name]}</svg>`
+const ACTIONS = [['climb','爬窗','攀爬预览'],['ledge','翻上窗沿','收尾预览'],['wave','挥挥手'],['stretch','伸个懒腰'],['magnify','看看内容'],['read','读一会儿'],['dance','跳支舞'],['walk','走两步'],['water','喝点水'],['nap','打个盹'],['happy','开心一下'],['magic','变个魔术']]
 export const dateValue = value => value ? new Date(value).getTime() : null
 export function mountCompanion({invoke, initial, showError, onTasks, platform}) {
   let current = initial
@@ -13,15 +25,17 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   const nav = document.createElement('nav'); nav.className = 'companion-nav'; nav.setAttribute('aria-label','控制面板')
   header.after(nav)
   const host = document.createElement('div'); nav.after($('panel-error')); $('panel-error').after(host)
-  const tabs = [['chat','聊天'],['todos','待办'],['goals','目标'],['tasks','任务'],['growth','成长'],['activity','动态'],['settings','设置']]
+  const tabs = [['chat','聊天'],['todos','待办'],['goals','目标'],['tasks','任务'],['actions','动作'],['growth','成长'],['activity','动态'],['settings','设置']]
   for (const [name, label] of tabs) {
-    const button = text('button',label); button.type='button'; button.dataset.tab=name
+    const button = text('button',''); button.type='button'; button.dataset.tab=name;button.setAttribute('aria-label',label)
+    button.innerHTML=navIcon(name);button.append(text('span',label))
     button.addEventListener('click',()=>select(name)); nav.append(button)
   }
   host.innerHTML = `
     <section id="view-chat" class="companion-view">
+      <div id="chat-welcome" class="chat-welcome"><div class="welcome-sprite" aria-hidden="true"></div><h2>今天，也一起。</h2><p>聊聊今天，或者从一件小事开始。</p></div>
       <div id="chat-messages" class="chat-messages" aria-live="polite"></div><p id="chat-live" role="status"></p><button id="chat-pending" type="button" hidden>查看需要确认的操作</button><div id="chat-question" class="pending-card" hidden></div><div id="pending-actions" class="item-list"></div>
-      <form id="chat-form" class="chat-compose"><label for="chat-text">和大小姐说点什么</label><textarea id="chat-text" required maxlength="20000" placeholder="聊聊今天，或者交给我一件事…"></textarea><div class="compose-footer"><button id="chat-new" type="button">新对话</button><button id="chat-stop" type="button" hidden>停止</button><button id="chat-send" class="primary">发送 ↗</button></div></form>
+      <form id="chat-form" class="chat-compose"><label for="chat-text" class="visually-hidden">和大小姐说点什么</label><textarea id="chat-text" required maxlength="20000" placeholder="说点什么，或者交给我一件事…"></textarea><div class="compose-footer"><button id="chat-new" type="button" class="subtle">＋ 新对话</button><button id="chat-stop" type="button" hidden>停止</button><button id="chat-send" class="primary">发送 ↗</button></div></form>
       <div class="quick-actions"><button id="look-open" type="button">看看我在做什么</button><button id="note-open" type="button">贴便签</button><button id="prank-dance" type="button">跳支舞</button></div>
       <details id="look-controls"><summary>选择观察窗口</summary><p class="muted">选中窗口的画面会交给当前 Codex 模型理解，不读取其他窗口。</p><div class="workspace-row"><select id="look-window" aria-label="观察窗口"></select><button id="look-refresh" type="button">刷新窗口</button><button id="look-now" type="button">看一下</button></div><p id="look-state" role="status"></p></details>
     </section>
@@ -34,6 +48,7 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
       <h2>持续推进的目标</h2><form id="goal-form" class="stack-form"><input id="goal-title" aria-label="目标" required placeholder="想持续推进什么？"><textarea id="goal-detail" aria-label="目标标准" placeholder="做到什么程度，哪些事情需要先问你？"></textarea><div class="workspace-row"><select id="goal-every" aria-label="跟进频率"><option value="daily">每天</option><option value="3h">每 3 小时</option><option value="hourly">每小时</option></select><input id="goal-at" type="time" value="09:00" aria-label="每日跟进时间"><button class="primary">添加目标</button></div></form><div id="goal-list" class="item-list"></div>
     </section>
     <section id="view-growth" class="companion-view" hidden><h2 id="growth-level"></h2><h3>记住的事</h3><form id="memory-form" class="workspace-row"><input id="memory-text" aria-label="长期记忆" required placeholder="希望大小姐记住的偏好"><button>记住</button></form><div id="memory-list" class="item-list"></div><div class="quick-actions"><button id="growth-reflect">整理记忆与日记</button></div><h3>成长笔记</h3><div id="growth-notes"></div><h3>日记</h3><div id="growth-diary"></div></section>
+    <section id="view-actions" class="companion-view" hidden><div class="actions-intro"><h2>让她去转转。</h2><p>一个小动作，也是一点陪伴。</p></div><div class="new-actions"><div class="action-art" id="climb-preview" aria-hidden="true"></div><div class="action-art" id="ledge-preview" aria-hidden="true"></div><div><span class="eyebrow">新动作</span><h3>从窗口边上，爬到你身边。</h3><p>攀爬与翻上窗沿已经画好，可以先预览动作。</p></div></div><div id="action-gallery" class="action-gallery" aria-label="动作选择器"></div><p id="action-state" class="muted" role="status">选择一个动作，在桌宠上播放。不会弹出说话气泡。</p></section>
     <section id="view-activity" class="companion-view" hidden><h2>桌宠自己做的事</h2><div class="quick-actions"><button id="agenda-brief">今日简报</button><button id="agenda-pulse">只读巡检</button><button id="agenda-tip">来个小技巧</button><button id="summary-now">今日小结</button></div><div id="background-tasks" class="item-list"></div><h2>最近的动态</h2><div id="activity-list" class="item-list"></div></section>
     <section id="view-settings" class="companion-view" hidden>
       <h2>安静地陪着你</h2>
@@ -48,6 +63,14 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
       </form>
       <h2>AI 与工作目录</h2><form id="companion-settings" class="stack-form"><label>聊天与任务后端<select id="companion-backend"><option value="codex">Codex</option><option value="dsh">DeepSeek Harness（Windows 兼容）</option></select></label><details><summary>DSH 兼容设置</summary><label>DSH 可执行文件<input id="companion-dsh" placeholder="自动查找"></label><label>Profile<input id="companion-profile" placeholder="desktop"></label><label>Provider<input id="companion-provider" placeholder="继承原配置"></label><label>DSH 模型<input id="companion-dsh-model" placeholder="继承原配置"></label></details><label>Codex 可执行文件<input id="companion-codex" placeholder="自动查找"></label><label>模型<input id="companion-model" placeholder="使用 Codex 默认模型"></label><label>观察模型<input id="companion-glance-model" placeholder="与聊天相同"></label><label>工作目录<input id="companion-cwd" placeholder="未设置时只在独立工作目录中运行"></label><label>任务权限<select id="companion-permission"><option value="read-only">只读</option><option value="workspace-write">工作区可写</option><option value="danger-full-access">完全访问（谨慎）</option></select></label><div class="settings-grid"><label>安静开始<input id="quiet-start" type="time"></label><label>安静结束<input id="quiet-end" type="time"></label></div><button class="primary">保存</button><span id="companion-saved" role="status"></span></form><h2>天气与更新</h2><form id="weather-form" class="workspace-row"><input id="weather-city" aria-label="所在城市" placeholder="城市留空时不查询天气"><button>查天气</button></form><p id="weather-state" role="status"></p><button id="update-check" type="button">检查更新</button><p id="update-state" role="status"></p>
     </section>`
+  const sidebar=document.createElement('aside');sidebar.className='companion-sidebar'
+  const brand=header.querySelector('.brand');brand.querySelector('h1').textContent='大小姐';brand.querySelector('.brand-mark').textContent='✿'
+  sidebar.append(brand,nav)
+  const main=document.createElement('main');main.className='companion-main'
+  const title=document.createElement('div');title.className='panel-title';title.innerHTML='<h2 id="companion-title">今天也一起。</h2><p id="companion-subtitle">Codex · 随时聊聊</p>'
+  header.prepend(title)
+  document.querySelector('#app').prepend(sidebar,main)
+  main.append(header,$('panel-error'),host,tasks,document.querySelector('.panel-footnote'))
   const call = async (command,args={}) => {const result=await invoke('companion_command',{command,args});showError('');return result}
   const bind = (id,work) => $(id).addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;try{await work()}catch(e){showError(e)}finally{button.disabled=false}})
   const submit=(id,work)=>$(id).addEventListener('submit',async e=>{e.preventDefault();const button=e.target.querySelector('button.primary,button:not([type="button"])');if(button)button.disabled=true;try{await work()}catch(error){showError(error)}finally{if(button)button.disabled=false}})
@@ -60,6 +83,9 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   bind('look-now',async()=>{const id=Number($('look-window').value);if(!id)throw new Error('请先选择一个窗口');await invoke('look_now',{chosen:id});$('look-state').textContent='这次观察已开始，合适的内容会显示在桌宠气泡里。'})
   bind('note-open',()=>invoke('note_toggle'))
   bind('prank-dance',()=>call('prank',{name:'dance'}))
+  const play=async(name,label)=>{await call('prank',{name});$('action-state').textContent=`正在桌宠上播放：${label}`}
+  for(const [name,label,description]of ACTIONS){const b=document.createElement('button');b.type='button';b.className='action-tile';b.setAttribute('aria-label',`播放${label}`);const preview=document.createElement('span');preview.className='action-art';preview.dataset.sprite=name;preview.setAttribute('aria-hidden','true');b.append(preview,text('span',label));if(description)b.append(text('small',description));b.addEventListener('click',async()=>{b.disabled=true;try{await play(name,label)}catch(e){showError(e)}finally{b.disabled=false}});$('action-gallery').append(b)}
+  fetch('./assets/sprites/manifest.json').then(r=>{if(!r.ok)throw new Error('动作资源不可用');return r.json()}).then(manifest=>{for(const node of [...document.querySelectorAll('[data-sprite]'),$('climb-preview'),$('ledge-preview')]){const name=node.dataset.sprite||node.id.replace('-preview','');const a=manifest.anims[name];if(!a)throw new Error(`缺少动作：${name}`);const h=node.closest('.new-actions')?132:78;const w=h*a.w/a.h;node.style.width=`${w}px`;node.style.height=`${h}px`;node.style.backgroundImage=`url('./assets/sprites/${a.file}')`;node.style.backgroundSize=`${w*a.frames}px ${h}px`;if(name==='ledge'&&node.id)node.style.backgroundPosition=`-${w*3}px 0`}}).catch(showError)
   submit('todo-form',async()=>{await call('todo:add',{text:$('todo-text').value,due:dateValue($('todo-due').value)});$('todo-text').value=''})
   submit('reminder-form',async()=>{await call('reminder:add',{text:$('reminder-text').value,at:dateValue($('reminder-at').value),repeat:$('reminder-repeat').value});$('reminder-text').value=''})
   submit('goal-form',async()=>{await call('goal:add',{title:$('goal-title').value,detail:$('goal-detail').value,every:$('goal-every').value,at:$('goal-at').value});$('goal-title').value='';$('goal-detail').value=''})
@@ -82,6 +108,7 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   function row(title,meta=''){const n=text('div','', 'companion-item');const body=text('div','');body.append(text('p',title),text('small',meta));n.append(body);return n}
   function render() {
     const d=current.data
+    $('chat-welcome').hidden=d.chat.messages.length>0
     $('chat-send').disabled=!!current.chatTask; $('chat-stop').hidden=!current.chatTask
     if(!current.chatTask){$('chat-live').textContent='';$('chat-pending').hidden=true}
     list('chat-messages',d.chat.messages.slice(-100),m=>text('div',m.text,`chat-message ${m.role}`))
@@ -112,7 +139,7 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
     $('observe-enabled').checked=!!o.enabled;$('observe-consent').checked=o.consentVersion===1;$('observe-interval').value=o.intervalSeconds;$('observe-max').value=o.maxPerHour;$('observe-exclude').value=o.excludeApps
     for(const [id,key]of [['companion-backend','backend'],['companion-dsh','dshExe'],['companion-profile','sourceProfile'],['companion-provider','provider'],['companion-dsh-model','model'],['companion-codex','codexExe'],['companion-model','codexModel'],['companion-glance-model','codexGlanceModel'],['companion-cwd','cwd'],['companion-permission','permission'],['quiet-start','quietStart'],['quiet-end','quietEnd']])$(id).value=s[key]||''
   }
-  function select(name) {tab=name;for(const [n]of tabs){const node=$(`view-${n}`);node.hidden=n!==name;nav.querySelector(`[data-tab="${n}"]`).setAttribute('aria-current',String(n===name))}if(name==='settings'){fill();invoke('observer_status').then(permission=>{current.observer.permission=permission;render()}).catch(showError)}render()}
+  function select(name) {if(!tabs.some(([n])=>n===name))return;tab=name;for(const [n]of tabs){const node=$(`view-${n}`);node.hidden=n!==name;nav.querySelector(`[data-tab="${n}"]`).setAttribute('aria-current',String(n===name))}const label=tabs.find(([n])=>n===name)[1];$('companion-title').textContent=name==='chat'?'今天也一起。':label;$('companion-subtitle').textContent=name==='chat'?`${current.data.settings.backend==='dsh'?'DeepSeek Harness':'Codex'} · 随时聊聊`:name==='actions'?'随心动一动，安静陪着你。':'Claude Ojousama';if(name==='settings'){fill();invoke('observer_status').then(permission=>{current.observer.permission=permission;render()}).catch(showError)}render()}
   fill();select(tab)
   return { update(value){current=value;render()}, select, taskUpdated(tasks){const task=tasks.find(t=>t.id===current.chatTask);$('chat-live').textContent=task ? task.output||task.activity : ''; $('chat-send').disabled=!!current.chatTask; $('chat-stop').hidden=!current.chatTask; $('chat-pending').hidden=!task?.pending} }
 }
