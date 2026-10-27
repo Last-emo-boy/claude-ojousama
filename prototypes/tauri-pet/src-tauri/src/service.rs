@@ -1869,6 +1869,8 @@ mod ambient_tests {
         std::fs::create_dir_all(&root).unwrap();
         let data = Companion::open(root.join("data.json"), None).unwrap();
         data.change(|d| {
+            // These scenarios speak Codex RPC; native Windows defaults to DSH.
+            d["settings"]["backend"] = json!("codex");
             d["settings"]["quietStart"] = json!("");
             d["observation"]["enabled"] = json!(true);
             d["observation"]["consentVersion"] = json!(1);

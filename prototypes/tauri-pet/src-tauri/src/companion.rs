@@ -391,6 +391,22 @@ pub(crate) fn apply(d: &mut Value, command: &str, args: Value) -> Result<Value, 
 mod tests {
     use super::*;
     #[test]
+    fn new_install_backend_and_permissions_keep_existing_platform_defaults() {
+        let d = defaults();
+        assert_eq!(
+            d["settings"]["backend"],
+            if cfg!(windows) { "dsh" } else { "codex" }
+        );
+        assert_eq!(
+            d["settings"]["permission"],
+            if cfg!(windows) {
+                "workspace-write"
+            } else {
+                "read-only"
+            }
+        );
+    }
+    #[test]
     fn completing_a_todo_rewards_once_and_unrelated_edits_do_not_reward() {
         let mut d = defaults();
         apply(&mut d, "todo:add", json!({"text":"完成一小步"})).unwrap();
