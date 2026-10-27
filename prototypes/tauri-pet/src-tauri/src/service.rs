@@ -30,6 +30,7 @@ struct Job {
 #[derive(Default)]
 struct Runtime {
     epoch: u64,
+    stopping: bool,
     job: Option<Job>,
     looks: VecDeque<u64>,
     last_look: u64,
@@ -308,6 +309,9 @@ impl Service {
         let (d, epoch) = {
             let mut r = self.runtime.lock().unwrap();
             let d = self.data.snapshot();
+            if r.stopping {
+                return Err("应用正在退出".into());
+            }
             if r.job.is_some() || r.preparing {
                 return Err("已经在思考一件事了".into());
             }
@@ -368,6 +372,9 @@ impl Service {
             Err(e) => {
                 r.preparing = false;
                 r.status.clear();
+                r.error = e.clone();
+                drop(r);
+                self.changed();
                 return Err(e);
             }
         };
@@ -390,6 +397,9 @@ impl Service {
     fn start_background(&self, kind: &str) -> Result<(), String> {
         let d = self.data.snapshot();
         let mut r = self.runtime.lock().unwrap();
+        if r.stopping {
+            return Err("应用正在退出".into());
+        }
         if r.job.is_some() || r.preparing {
             return Err("正在做另一件后台工作".into());
         }
@@ -446,6 +456,9 @@ impl Service {
         StartRequest{backend,backend_settings,reasoning_effort:s["codexEffort"].as_str().unwrap_or("").into(),prompt,workspace:s["cwd"].as_str().filter(|s|!s.is_empty()).map(String::from).unwrap_or_else(||self.work.to_string_lossy().into_owned()),permission:s["permission"].as_str().unwrap_or("read-only").into(),codex_path:s["codexExe"].as_str().unwrap_or("").into(),model:s["codexModel"].as_str().unwrap_or("").into(),session_id,instructions:"你是 Claude 大小姐，一位温暖、俏皮但不啰嗦的像素少女桌面伙伴。用简洁自然的中文回应，认真执行用户明确授权的任务。涉及外发、删除、花费和权限扩展时先问。需要桌宠动作时，在末尾附 ```pet 代码块，每行一个 JSON，例如 {\"action\":\"todo.add\",\"text\":\"写周报\"}、{\"action\":\"remind\",\"text\":\"休息\",\"in\":30}、{\"action\":\"emote\",\"anim\":\"happy\"}、{\"action\":\"pomodoro\",\"minutes\":25}、{\"action\":\"note.show\"}、{\"action\":\"memory.add\",\"text\":\"长期偏好\"}。文件移动用 {\"action\":\"file.move\",\"from\":\"绝对路径\",\"to\":\"目标绝对路径\"}，打开链接用 {\"action\":\"open\",\"target\":\"https://…\"}，需要确认的事用 {\"action\":\"ask\",\"question\":\"问题\",\"options\":[\"A\",\"B\"]}。只在用户要求的范围内提出动作，不得声称未执行的动作已经完成。".into(),..StartRequest::default()}
     }
     fn chat(&self, text: &str, typed: bool) -> Result<Value, String> {
+        if self.runtime.lock().unwrap().stopping {
+            return Err("应用正在退出".into());
+        }
         if self.runtime.lock().unwrap().chat.is_some() {
             return Err("上一条回复仍在处理，请先等它完成或停止".into());
         }
@@ -486,6 +499,9 @@ impl Service {
         Ok(json!(task))
     }
     fn goal(&self, id: Value) -> Result<Value, String> {
+        if self.runtime.lock().unwrap().stopping {
+            return Err("应用正在退出".into());
+        }
         if self.runtime.lock().unwrap().goal.is_some() {
             return Err("上一次目标跟进还在收尾".into());
         }
@@ -903,6 +919,12 @@ impl Service {
         Ok(())
     }
     pub fn shutdown(&self) {
+        {
+            let mut runtime = self.runtime.lock().unwrap();
+            runtime.stopping = true;
+            runtime.epoch += 1;
+            runtime.pending_ambient = None;
+        }
         self.background.shutdown();
     }
 }
@@ -959,5 +981,36 @@ mod tests {
         assert!(!eligible(&d, 200_000, &mut looks, 0));
         looks.clear();
         assert!(!eligible(&d, 200_000, &mut looks, 150_000));
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    #[test]
+    fn shutdown_rejects_capture_and_model_work_before_touching_the_screen() {
+        let root = std::env::temp_dir().join(format!("ojousama-shutdown-{}", companion::now()));
+        std::fs::create_dir_all(&root).unwrap();
+        let data = Companion::open(root.join("pet-data.json"), None).unwrap();
+        let tasks = TaskManager::ephemeral(Arc::new(|_| {}));
+        let service = Service::new(
+            data,
+            tasks,
+            root.join("work"),
+            root.join("documents"),
+            Arc::new(|_, _| {}),
+        )
+        .unwrap();
+        service.shutdown();
+        assert!(service.look(None, false).unwrap_err().contains("退出"));
+        assert!(service
+            .apply("growth:reflect", json!({}))
+            .unwrap_err()
+            .contains("退出"));
+        assert!(service
+            .apply("chat:send", json!({"text":"hello"}))
+            .unwrap_err()
+            .contains("退出"));
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

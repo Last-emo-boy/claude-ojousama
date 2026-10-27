@@ -184,6 +184,9 @@ fn task_start(
     mut request: StartRequest,
 ) -> Result<TaskView, String> {
     panel_only(&window)?;
+    if state.stop.load(Ordering::Relaxed) {
+        return Err("应用正在退出".into());
+    }
     if request.permission == "danger-full-access"
         && state.settings.lock().unwrap().permission != "danger-full-access"
     {
@@ -217,6 +220,9 @@ fn task_retry(
     id: u64,
 ) -> Result<TaskView, String> {
     panel_only(&window)?;
+    if state.stop.load(Ordering::Relaxed) {
+        return Err("应用正在退出".into());
+    }
     state.tasks.retry(id)
 }
 #[tauri::command]
@@ -985,8 +991,8 @@ fn main() {
         if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
             let state = app.state::<State>();
             state.stop.store(true, Ordering::Relaxed);
-            state.tasks.shutdown();
             state.service.shutdown();
+            state.tasks.shutdown();
         }
     });
 }
