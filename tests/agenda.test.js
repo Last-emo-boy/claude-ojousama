@@ -1,6 +1,10 @@
 // Unit checks for src/main/agenda.js: which background job is due, and the daily budget.
-const { Agenda } = require('../src/main/agenda')
+const { Agenda, repoStatus } = require('../src/main/agenda')
 const { Growth } = require('../src/main/growth')
+const fs = require('fs')
+const os = require('os')
+const path = require('path')
+const { execFileSync } = require('child_process')
 
 const MIN = 60000
 const at = (h, m = 0) => new Date(2026, 9, 26, h, m).getTime() // a Monday, local time
@@ -83,7 +87,39 @@ check('agenda rule off -> nothing', (() => {
   return s
 })(), null)
 
-const bad = cases.filter((c) => !c.ok)
-for (const c of bad) console.log('FAIL', c.name, 'got', JSON.stringify(c.got), 'want', JSON.stringify(c.want))
-console.log(`${cases.length - bad.length}/${cases.length} passed`)
-process.exit(bad.length ? 1 : 0)
+;(async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ojousama-git-filter-'))
+  const env = { ...process.env, GIT_CONFIG_NOSYSTEM:'1', GIT_CONFIG_GLOBAL:path.join(root,'empty-config') }
+  delete env.GIT_TEMPLATE_DIR
+  const git = (...args) => execFileSync('git', args, { cwd:root, env, encoding:'utf8', stdio:['ignore','pipe','pipe'] })
+  try {
+    git('init','-q')
+    fs.writeFileSync(path.join(root,'.gitattributes'),'*.txt filter=fixture\n')
+    fs.writeFileSync(path.join(root,'filter.sh'),'#!/bin/sh\nprintf invoked > filter-marker\ncat\n')
+    git('config','filter.fixture.clean','sh filter.sh')
+    fs.writeFileSync(path.join(root,'file.txt'),'before\n')
+    git('add','file.txt','.gitattributes')
+    git('-c','user.name=Fixture','-c','user.email=fixture@example.invalid','commit','-qm','controlled baseline')
+    fs.rmSync(path.join(root,'filter-marker'),{force:true})
+    fs.writeFileSync(path.join(root,'file.txt'),'after!\n')
+    git('-c','core.fsmonitor=false','status','--porcelain=v1')
+    check('matched-length control invokes configured clean filter',fs.existsSync(path.join(root,'filter-marker')),true)
+    fs.rmSync(path.join(root,'filter-marker'),{force:true})
+    const plain = await repoStatus(root)
+    check('read-only status reports changed file',plain.includes('file.txt'),true)
+    check('read-only status does not execute clean filter',fs.existsSync(path.join(root,'filter-marker')),false)
+    check('filter-limited status is labelled',plain.includes('未运行仓库过滤器'),true)
+    git('config','filter.fixture.process','sh filter.sh')
+    git('config','filter.fixture.required','true')
+    const process = await repoStatus(root)
+    check('required process filter can stay disabled without losing status',process.includes('file.txt'),true)
+    check('process filter is not launched',fs.existsSync(path.join(root,'filter-marker')),false)
+    check('repository filter settings stay unchanged',git('config','filter.fixture.required').trim(),'true')
+  } finally {
+    fs.rmSync(root,{recursive:true,force:true})
+  }
+  const bad = cases.filter((c) => !c.ok)
+  for (const c of bad) console.log('FAIL', c.name, 'got', JSON.stringify(c.got), 'want', JSON.stringify(c.want))
+  console.log(`${cases.length - bad.length}/${cases.length} passed`)
+  process.exitCode = bad.length ? 1 : 0
+})().catch((error) => { console.error(error); process.exitCode=1 })

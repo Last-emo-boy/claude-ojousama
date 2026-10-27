@@ -16,12 +16,26 @@ const { Growth, cleanLine, dayStr } = require('./growth')
  * Run one fixed, read-only git command; '' on any failure. A repo's own config must not make it run
  * programs (core.fsmonitor), and it never takes the index lock while the user works.
  */
-function git(cwd, args) {
-  const safe = ['-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false', ...args]
+function readGit(cwd, args, emptyConfig = false) {
+  const safe = ['-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false', '-c', 'log.showSignature=false', ...args]
   const env = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' }
   return new Promise((resolve) => {
-    execFile('git', safe, { cwd, env, timeout: 5000, windowsHide: true, maxBuffer: 1 << 20 }, (err, out) => resolve(err ? '' : String(out)))
+    execFile('git', safe, { cwd, env, timeout: 5000, windowsHide: true, maxBuffer: 1 << 20 }, (err, out) => resolve(err ? (emptyConfig && err.code === 1 ? '' : null) : String(out)))
   })
+}
+async function git(cwd, args) {
+  if (args[0] !== 'status') return (await readGit(cwd, args)) || ''
+  const keys = await readGit(cwd, ['config', '--null', '--name-only', '--get-regexp', '^filter\\.'], true)
+  if (keys === null) return ''
+  const drivers = new Set(keys.split('\0').filter(Boolean).map((key) => key.slice(0, key.lastIndexOf('.'))))
+  const overrides = []
+  for (const driver of drivers) {
+    for (const key of ['clean', 'smudge', 'process']) overrides.push('-c', `${driver}.${key}=`)
+    overrides.push('-c', `${driver}.required=false`)
+  }
+  const out = await readGit(cwd, [...overrides, ...args, '--ignore-submodules=all'])
+  if (!out) return ''
+  return drivers.size ? out.replace('\n', '（未运行仓库过滤器；需转换的文件状态可能与常规查询不同）\n') : out
 }
 
 /**
@@ -241,4 +255,4 @@ class Agenda {
   }
 }
 
-module.exports = { Agenda }
+module.exports = { Agenda, repoStatus }

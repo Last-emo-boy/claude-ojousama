@@ -323,6 +323,58 @@ mod tests {
     }
 }
 
+fn read_git(dir: &Path, args: &[String]) -> Result<(std::process::ExitStatus, Vec<u8>), String> {
+    let mut child = std::process::Command::new("git")
+        .args([
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.untrackedCache=false",
+        ])
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    let stdout = child.stdout.take().unwrap();
+    let reader = std::thread::spawn(move || {
+        use std::io::Read;
+        let mut buffer = Vec::new();
+        stdout.take(65_537).read_to_end(&mut buffer).map(|_| buffer)
+    });
+    let started = std::time::Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            break status;
+        }
+        if started.elapsed() > Duration::from_secs(5) {
+            if let Err(error) = child.kill() {
+                if child.try_wait().map_err(|e| e.to_string())?.is_none() {
+                    return Err(error.to_string());
+                }
+            }
+            child.wait().map_err(|e| e.to_string())?;
+            reader
+                .join()
+                .map_err(|_| "git 输出读取失败")?
+                .map_err(|e| e.to_string())?;
+            return Err("git 查询超过 5 秒，已停止本次巡检".into());
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    };
+    let bytes = reader
+        .join()
+        .map_err(|_| "git 输出读取失败")?
+        .map_err(|e| e.to_string())?;
+    if bytes.len() > 65_536 {
+        return Err("git 输出超过巡检上限，已停止本次查询".into());
+    }
+    Ok((status, bytes))
+}
 pub fn workspace_pulse(cwd: &str) -> Result<String, String> {
     if cwd.is_empty() {
         return Err("请先设置工作目录".into());
@@ -342,51 +394,52 @@ pub fn workspace_pulse(cwd: &str) -> Result<String, String> {
         if !dir.join(".git").exists() {
             continue;
         }
-        let mut child = std::process::Command::new("git")
-            .args([
-                "-c",
-                "core.fsmonitor=false",
-                "-c",
-                "core.untrackedCache=false",
+        let args = [
+            "config",
+            "--null",
+            "--name-only",
+            "--get-regexp",
+            r"^filter\.",
+        ]
+        .map(String::from);
+        let (status, keys) = read_git(&dir, &args)?;
+        if !status.success() && status.code() != Some(1) {
+            return Err("无法读取 Git 配置，未查询工作区状态".into());
+        }
+        let keys = std::str::from_utf8(&keys).map_err(|_| "Git 配置名称不是有效 UTF-8")?;
+        let drivers: HashSet<_> = keys
+            .split('\0')
+            .filter_map(|key| key.rsplit_once('.').map(|(driver, _)| driver))
+            .collect();
+        let mut args = Vec::new();
+        for driver in &drivers {
+            for key in ["clean", "smudge", "process"] {
+                args.extend(["-c".into(), format!("{driver}.{key}=")]);
+            }
+            args.extend(["-c".into(), format!("{driver}.required=false")]);
+        }
+        args.extend(
+            [
                 "status",
                 "--porcelain=v1",
                 "--branch",
-            ])
-            .current_dir(&dir)
-            .env("GIT_OPTIONAL_LOCKS", "0")
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        let stdout = child.stdout.take().unwrap();
-        let reader = std::thread::spawn(move || {
-            use std::io::Read;
-            let mut buffer = Vec::new();
-            stdout.take(65_536).read_to_end(&mut buffer).map(|_| buffer)
-        });
-        let started = std::time::Instant::now();
-        let status = loop {
-            if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
-                break status;
-            }
-            if started.elapsed() > Duration::from_secs(5) {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err("git 状态查询超过 5 秒，已停止本次巡检".into());
-            }
-            std::thread::sleep(Duration::from_millis(25));
-        };
-        let bytes = reader
-            .join()
-            .map_err(|_| "git 输出读取失败")?
-            .map_err(|e| e.to_string())?;
+                "--ignore-submodules=all",
+            ]
+            .map(String::from),
+        );
+        let (status, bytes) = read_git(&dir, &args)?;
         if !status.success() {
             continue;
         }
+        let note = if drivers.is_empty() {
+            ""
+        } else {
+            "未运行仓库过滤器；需转换的文件状态可能与常规查询不同。\n"
+        };
         results.push(format!(
-            "{}\n{}",
+            "{}\n{}{}",
             dir.strip_prefix(&root).unwrap_or(&dir).display(),
+            note,
             String::from_utf8_lossy(&bytes)
         ));
         if results.len() >= 6 {
@@ -394,6 +447,78 @@ pub fn workspace_pulse(cwd: &str) -> Result<String, String> {
         }
     }
     Ok(results.join("\n\n"))
+}
+#[cfg(test)]
+mod git_tests {
+    use super::*;
+    #[test]
+    fn workspace_status_never_runs_clean_or_required_process_filters() {
+        let root = std::env::temp_dir().join(format!(
+            "ojousama-git-filter-{}-{}",
+            std::process::id(),
+            companion::now()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let git = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&root)
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_CONFIG_GLOBAL", root.join("empty-config"))
+                .env_remove("GIT_TEMPLATE_DIR")
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            out.stdout
+        };
+        git(&["init", "-q"]);
+        fs::write(root.join(".gitattributes"), "*.txt filter=fixture\n").unwrap();
+        fs::write(
+            root.join("filter.sh"),
+            "#!/bin/sh\nprintf invoked > filter-marker\ncat\n",
+        )
+        .unwrap();
+        git(&["config", "filter.fixture.clean", "sh filter.sh"]);
+        fs::write(root.join("file.txt"), "before\n").unwrap();
+        git(&["add", "file.txt", ".gitattributes"]);
+        git(&[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "controlled baseline",
+        ]);
+        fs::remove_file(root.join("filter-marker")).unwrap();
+        fs::write(root.join("file.txt"), "after!\n").unwrap();
+        git(&["-c", "core.fsmonitor=false", "status", "--porcelain=v1"]);
+        assert!(
+            root.join("filter-marker").exists(),
+            "positive control must demonstrate the filter ran"
+        );
+        fs::remove_file(root.join("filter-marker")).unwrap();
+        let status = workspace_pulse(root.to_str().unwrap()).unwrap();
+        assert!(status.contains("file.txt") && status.contains("未运行仓库过滤器"));
+        assert!(!root.join("filter-marker").exists());
+        git(&["config", "filter.fixture.process", "sh filter.sh"]);
+        git(&["config", "filter.fixture.required", "true"]);
+        assert!(workspace_pulse(root.to_str().unwrap())
+            .unwrap()
+            .contains("file.txt"));
+        assert!(!root.join("filter-marker").exists());
+        assert_eq!(
+            String::from_utf8(git(&["config", "filter.fixture.required"]))
+                .unwrap()
+                .trim(),
+            "true"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 }
 
 pub fn open_target(target: &str) -> Result<(), String> {
