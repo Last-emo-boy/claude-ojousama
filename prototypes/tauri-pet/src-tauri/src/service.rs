@@ -2089,6 +2089,8 @@ mod ambient_tests {
         assert!(service.runtime.lock().unwrap().looks.is_empty());
         assert_eq!(service.snapshot()["observer"]["pauseReason"], "task");
         service.shutdown();
+        service.tasks.shutdown();
+        assert_eq!(service.tasks.list()[0].status, "cancelled");
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
@@ -2408,6 +2410,8 @@ mod agenda_tests {
             );
         }
         service.shutdown();
+        service.tasks.shutdown();
+        assert_eq!(service.tasks.list()[0].status, "cancelled");
         std::fs::remove_dir_all(root).unwrap();
     }
 }
