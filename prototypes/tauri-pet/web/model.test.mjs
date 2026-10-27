@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { isActive, orderedTasks, upsertTask, currentTask, selectedTask, presentation, settingsFrom, pendingKey, alphaBands, placeBands } from './model.mjs'
+import { createDragQueue } from './drag.mjs'
 
 const task = (id, status = 'completed', createdAt = id) => ({ id, status, createdAt, activity: '', error: null })
 
@@ -112,4 +113,103 @@ test('hit bands use logical CSS coordinates at fractional scales', () => {
   assert.deepEqual(placeBands([{ x: 2, y: 3, width: 4, height: 5 }], { x: 10, y: 20 }, 1.5), [
     { x: 13, y: 24, width: 7, height: 9 },
   ])
+})
+
+const deferred = () => {
+  let resolve
+  const promise = new Promise(done => { resolve = done })
+  return { promise, resolve }
+}
+const tick = () => new Promise(resolve => setImmediate(resolve))
+
+test('begin completes before moves; coalesces 10000 pending samples and flushes release point before end', async () => {
+  const calls = [], errors = [], gate = deferred()
+  const begin = createDragQueue((command, point) => {
+    calls.push({ command, point })
+    return command === 'drag_begin' ? gate.promise : Promise.resolve()
+  }, error => errors.push(error))
+  const drag = begin({ x: 1, y: 2 })
+  await tick()
+  for (let x = 0; x < 10000; x++) drag.move({ x, y: x })
+  const finished = drag.end({ x: 10000, y: 10001 })
+  assert.deepEqual(calls.map(call => call.command), ['drag_begin'])
+  gate.resolve()
+  await finished
+  assert.deepEqual(calls, [
+    { command: 'drag_begin', point: { x: 1, y: 2 } },
+    { command: 'drag_move', point: { x: 10000, y: 10001 } },
+    { command: 'drag_end', point: undefined },
+  ])
+  assert.equal(errors.length, 0)
+})
+
+test('one move in flight and one latest sample; end waits for both', async () => {
+  const calls = [], gate = deferred()
+  let moves = 0
+  const begin = createDragQueue((command, point) => {
+    calls.push([command, point])
+    return command === 'drag_move' && ++moves === 1 ? gate.promise : Promise.resolve()
+  }, assert.fail)
+  const drag = begin({ x: 0, y: 0 })
+  await tick()
+  drag.move({ x: 1, y: 1 })
+  await tick()
+  drag.move({ x: 2, y: 2 })
+  drag.move({ x: 3, y: 3 })
+  const finished = drag.end({ x: 4, y: 4 })
+  await tick()
+  assert.deepEqual(calls.map(call => call[0]), ['drag_begin', 'drag_move'])
+  gate.resolve()
+  await finished
+  assert.deepEqual(calls.map(call => call[0]), ['drag_begin', 'drag_move', 'drag_move', 'drag_end'])
+  assert.deepEqual(calls[2][1], { x: 4, y: 4 })
+})
+
+test('the next gesture cannot start before the preceding end finishes', async () => {
+  const calls = [], gate = deferred()
+  let endings = 0
+  const begin = createDragQueue((command, point) => {
+    calls.push([command, point])
+    return command === 'drag_end' && ++endings === 1 ? gate.promise : Promise.resolve()
+  }, assert.fail)
+  const first = begin({ x: 1, y: 1 })
+  const ended = first.end()
+  await tick()
+  const second = begin({ x: 2, y: 2 })
+  const secondEnded = second.end()
+  await tick()
+  assert.deepEqual(calls.map(call => call[0]), ['drag_begin', 'drag_end'])
+  gate.resolve()
+  await Promise.all([ended, secondEnded])
+  assert.deepEqual(calls.map(call => call[0]), ['drag_begin', 'drag_end', 'drag_begin', 'drag_end'])
+})
+
+test('move errors still end native drag and surface the error', async () => {
+  const calls = [], errors = []
+  const error = new Error('movement failed')
+  const begin = createDragQueue(command => {
+    calls.push(command)
+    return command === 'drag_move' ? Promise.reject(error) : Promise.resolve()
+  }, value => errors.push(value))
+  const drag = begin({ x: 0, y: 0 })
+  await assert.rejects(drag.end({ x: 4, y: 5 }), /movement failed/)
+  assert.deepEqual(calls, ['drag_begin', 'drag_move', 'drag_end'])
+  assert.deepEqual(errors, [error])
+})
+
+test('pointer cancellation retains the last move sample and end is idempotent', async () => {
+  const calls = [], gate = deferred()
+  const begin = createDragQueue((command, point) => {
+    calls.push([command, point])
+    return command === 'drag_begin' ? gate.promise : Promise.resolve()
+  }, assert.fail)
+  const drag = begin({ x: 0, y: 0 })
+  drag.move({ x: 15, y: 20 })
+  const finished = drag.end()
+  assert.equal(drag.end({ x: 0, y: 0 }), finished)
+  drag.move({ x: 100, y: 100 })
+  gate.resolve()
+  await finished
+  assert.deepEqual(calls[1], ['drag_move', { x: 15, y: 20 }])
+  assert.equal(calls.filter(call => call[0] === 'drag_end').length, 1)
 })

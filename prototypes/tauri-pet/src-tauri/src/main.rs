@@ -232,24 +232,55 @@ fn set_reduced_motion(state: tauri::State<State>, enabled: bool) {
     }
 }
 #[tauri::command]
-fn drag_begin(window: WebviewWindow, state: tauri::State<State>) -> Result<(), String> {
+fn drag_begin(
+    window: WebviewWindow,
+    state: tauri::State<State>,
+    x: f64,
+    y: f64,
+) -> Result<(), String> {
     if !state.positionable || window.label() != "pet" {
         return Err("当前桌面由系统管理窗口位置".into());
     }
-    let cursor = window.cursor_position().map_err(|e| e.to_string())?;
+    if !x.is_finite() || !y.is_finite() {
+        return Err("无效的指针坐标".into());
+    }
     let position = window.outer_position().map_err(|e| e.to_string())?;
     let scale = window.scale_factor().unwrap_or(1.0);
     let mut motion = state.motion.lock().unwrap();
     motion.x = position.x as f64;
     motion.y = position.y as f64;
     motion.scale = scale;
-    motion.begin((cursor.x, cursor.y));
+    motion.begin((x * scale, y * scale));
     let snapshot = motion.clone();
     drop(motion);
     trace_motion(&window, &snapshot);
     window
         .emit("motion:update", snapshot)
         .map_err(|e| e.to_string())
+}
+#[tauri::command]
+fn drag_move(
+    window: WebviewWindow,
+    state: tauri::State<State>,
+    x: f64,
+    y: f64,
+) -> Result<(), String> {
+    if window.label() != "pet" || !state.positionable {
+        return Err("当前窗口不能拖动".into());
+    }
+    if !x.is_finite() || !y.is_finite() {
+        return Err("无效的指针坐标".into());
+    }
+    let mut motion = state.motion.lock().unwrap();
+    if motion.phase != "dragging" {
+        return Ok(());
+    }
+    let dt = motion.last_sample.elapsed().as_secs_f64().clamp(0.001, 0.1);
+    let scale = motion.scale;
+    motion.drag((x * scale, y * scale), dt);
+    let position = PhysicalPosition::new(motion.x.round() as i32, motion.y.round() as i32);
+    drop(motion);
+    window.set_position(position).map_err(|e| e.to_string())
 }
 #[tauri::command]
 fn drag_end(window: WebviewWindow, state: tauri::State<State>) -> Result<(), String> {
@@ -341,14 +372,17 @@ fn start_motion(
             let scale = window.scale_factor().unwrap_or(1.0);
             let monitor = window.current_monitor().ok().flatten();
             let size = window.outer_size().ok();
+            let check_button = motion.lock().unwrap().phase == "dragging";
+            let pressed = check_button && left_pressed();
             let mut m = motion.lock().unwrap();
             let previous = m.phase.clone();
             let moving = previous != "settled";
             if previous == "dragging" {
-                if let Some(cursor) = cursor {
-                    m.drag((cursor.x, cursor.y), dt);
-                }
-                if !left_pressed() {
+                // Pointer capture is the primary input. Only a hardware press that was
+                // actually observed may trigger the outside-window release backstop.
+                if pressed {
+                    m.hardware_seen = true;
+                } else if m.hardware_seen {
                     m.release();
                 }
             }
@@ -364,7 +398,7 @@ fn start_motion(
             }
             let snapshot = m.clone();
             drop(m);
-            if moving {
+            if moving && snapshot.phase != "dragging" {
                 let _ = window.set_position(PhysicalPosition::new(
                     snapshot.x.round() as i32,
                     snapshot.y.round() as i32,
@@ -526,6 +560,7 @@ fn main() {
             set_hit_regions,
             set_reduced_motion,
             drag_begin,
+            drag_move,
             drag_end
         ])
         .build(tauri::generate_context!())

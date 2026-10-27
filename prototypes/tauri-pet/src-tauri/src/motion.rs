@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -14,6 +15,10 @@ pub struct Motion {
     pub reduced: bool,
     #[serde(skip)]
     pub scale: f64,
+    #[serde(skip)]
+    pub last_sample: Instant,
+    #[serde(skip)]
+    pub hardware_seen: bool,
 }
 
 impl Motion {
@@ -27,6 +32,8 @@ impl Motion {
             offset: (0.0, 0.0),
             reduced: false,
             scale: 1.0,
+            last_sample: Instant::now(),
+            hardware_seen: false,
         }
     }
 
@@ -35,10 +42,15 @@ impl Motion {
         self.phase = "dragging".into();
         self.vx = 0.0;
         self.vy = 0.0;
+        self.last_sample = Instant::now();
+        self.hardware_seen = false;
     }
 
     pub fn drag(&mut self, cursor: (f64, f64), dt: f64) {
         let (x, y) = (cursor.0 - self.offset.0, cursor.1 - self.offset.1);
+        if (x - self.x).abs() < 0.01 && (y - self.y).abs() < 0.01 {
+            return;
+        }
         let cap = 2200.0 * self.scale;
         let target_x = ((x - self.x) / dt).clamp(-cap, cap);
         let target_y = ((y - self.y) / dt).clamp(-cap, cap);
@@ -46,11 +58,16 @@ impl Motion {
         self.vy = self.vy * 0.4 + target_y * 0.6;
         self.x = x;
         self.y = y;
+        self.last_sample = Instant::now();
     }
 
     pub fn release(&mut self) {
         if self.phase != "dragging" {
             return;
+        }
+        if self.last_sample.elapsed() > Duration::from_millis(80) {
+            self.vx = 0.0;
+            self.vy = 0.0;
         }
         self.phase = if self.reduced { "settled" } else { "flying" }.into();
         if self.reduced {
@@ -92,6 +109,18 @@ impl Motion {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn final_identical_pointer_sample_preserves_fling_but_a_held_pointer_does_not() {
+        let mut m = Motion::new(0.0, 0.0);
+        m.begin((0.0, 0.0));
+        m.drag((40.0, 20.0), 0.016);
+        let velocity = (m.vx, m.vy);
+        m.drag((40.0, 20.0), 0.016);
+        assert_eq!((m.vx, m.vy), velocity);
+        m.last_sample = Instant::now() - Duration::from_millis(100);
+        m.release();
+        assert_eq!((m.vx, m.vy), (0.0, 0.0));
+    }
     #[test]
     fn throw_keeps_momentum_and_settles_inside_work_area() {
         let mut m = Motion::new(200.0, 100.0);

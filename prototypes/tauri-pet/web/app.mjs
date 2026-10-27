@@ -1,4 +1,5 @@
 import { isActive, orderedTasks, upsertTask, currentTask, selectedTask, presentation, settingsFrom, pendingKey, alphaBands, placeBands } from './model.mjs'
+import { createDragQueue } from './drag.mjs'
 
 const app = document.querySelector('#app')
 const view = new URLSearchParams(location.search).get('view') === 'panel' ? 'panel' : 'pet'
@@ -109,25 +110,30 @@ function mountPet() {
     event.preventDefault()
     invoke('show_panel').catch(showError)
   })
+  const beginDrag = createDragQueue(invoke, showError)
   let press = null
   canvas.addEventListener('pointerdown', event => {
     if (event.button !== 0) return
     event.preventDefault()
-    press = { x: event.screenX, y: event.screenY, at: performance.now(), distance: 0 }
+    const point = { x: event.screenX, y: event.screenY }
+    press = { ...point, at: performance.now(), distance: 0, drag: state.positionable ? beginDrag(point) : null }
     canvas.setPointerCapture(event.pointerId)
-    if (state.positionable) invoke('drag_begin').catch(showError)
   })
   canvas.addEventListener('pointermove', event => {
     if (!press) return
     press.distance = Math.max(press.distance, Math.hypot(event.screenX - press.x, event.screenY - press.y))
+    press.drag?.move({ x: event.screenX, y: event.screenY })
   })
   const release = async event => {
     if (!press) return
+    const ending = press
+    const point = event.type === 'pointerup' ? { x: event.screenX, y: event.screenY } : null
+    if (point) ending.distance = Math.max(ending.distance, Math.hypot(point.x - ending.x, point.y - ending.y))
     const click = event.type === 'pointerup' && press.distance < 6 && performance.now() - press.at < 500
     press = null
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
     try {
-      if (state.positionable) await invoke('drag_end')
+      if (ending.drag) await ending.drag.end(point)
       if (click) await invoke('show_panel')
     } catch (error) {
       showError(error)
@@ -370,8 +376,11 @@ function renderPanel() {
   $('detail-error').textContent = selected.error || ''
   const output = $('detail-output')
   const nearBottom = output.scrollHeight - output.scrollTop - output.clientHeight < 70
-  if (output.textContent !== (selected.output || '')) {
-    output.textContent = selected.output || ''
+  const emptyOutput = { cancelled: '任务已停止，未产生结果', failed: '任务未完成，未产生结果', completed: '任务已完成，未返回文字结果' }[selected.status] || '结果会出现在这里'
+  const outputText = selected.output || emptyOutput
+  output.classList.toggle('muted', !selected.output)
+  if (output.textContent !== outputText) {
+    output.textContent = outputText
     if (nearBottom) output.scrollTop = output.scrollHeight
   }
   renderPending(selected)
