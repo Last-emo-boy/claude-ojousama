@@ -10,8 +10,8 @@ const APP_ID = 'dev.ojousama.lite.prototype'
 const APP_NAME = 'Ojousama Lite'
 
 export function installTarget({ platform = process.platform, home = os.homedir(), env = process.env } = {}) {
-  if (platform === 'darwin') return path.join(home, 'Applications', `${APP_NAME}.app`)
-  if (platform === 'linux') return path.join(env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'ojousama-lite', 'app')
+  if (platform === 'darwin') return path.posix.join(home, 'Applications', `${APP_NAME}.app`)
+  if (platform === 'linux') return path.posix.join(env.XDG_DATA_HOME || path.posix.join(home, '.local', 'share'), 'ojousama-lite', 'app')
   throw new Error('Windows installs use the generated NSIS installer')
 }
 
@@ -41,9 +41,11 @@ export function replaceApp(source, target, validTarget) {
 
 export function assertNotRunning(target, { platform = process.platform, processes } = {}) {
   const list = processes ?? execFileSync('ps', ['-axo', 'pid=,comm='], { encoding: 'utf8' })
+  const paths = platform === 'win32' ? path.win32 : path.posix
+  const directory = paths.normalize(target)
   const running = list.split('\n').some(line => {
-    const executable = line.trim().replace(/^\d+\s+/, '')
-    return executable.startsWith(target + path.sep) || (platform === 'linux' && path.basename(executable) === 'ojousama-lite')
+    const executable = paths.normalize(line.trim().replace(/^\d+\s+/, ''))
+    return executable.startsWith(directory + paths.sep) || (platform === 'linux' && paths.basename(executable) === 'ojousama-lite')
   })
   if (running) throw new Error(`Close ${APP_NAME} before installing; the running app was not changed`)
 }

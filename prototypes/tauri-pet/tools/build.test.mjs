@@ -68,9 +68,9 @@ test('release directory follows explicit target triple and debug flag', () => {
 })
 
 test('prototype installs separately and Linux desktop quoting preserves one executable', () => {
-  const home = path.resolve('home')
-  assert.equal(installTarget({ platform: 'darwin', home, env: {} }), path.join(home, 'Applications', 'Ojousama Lite.app'))
-  assert.equal(installTarget({ platform: 'linux', home, env: {} }), path.join(home, '.local', 'share', 'ojousama-lite', 'app'))
+  const home = '/home/test'
+  assert.equal(installTarget({ platform: 'darwin', home, env: {} }), path.posix.join(home, 'Applications', 'Ojousama Lite.app'))
+  assert.equal(installTarget({ platform: 'linux', home, env: {} }), path.posix.join(home, '.local', 'share', 'ojousama-lite', 'app'))
   assert.equal(installTarget({ platform: 'linux', home, env: { XDG_DATA_HOME: '/data' } }), '/data/ojousama-lite/app')
   assert.throws(() => installTarget({ platform: 'win32', home }), /NSIS/)
   assert.equal(desktopQuote('/home/a b/$name%/app'), '"/home/a b/\\$name%%/app"')
@@ -110,4 +110,14 @@ test('running prototype is refused without terminating another app', () => {
   assert.throws(() => assertNotRunning(target, { platform: 'darwin', processes: `123 ${target}/Contents/MacOS/ojousama-lite\n` }), /Close Ojousama Lite/)
   assert.doesNotThrow(() => assertNotRunning(target, { platform: 'darwin', processes: '123 /Applications/Other.app/Contents/MacOS/Other\n' }))
   assert.throws(() => assertNotRunning('/home/test/.local/share/ojousama-lite/app', { platform: 'linux', processes: '123 /tmp/.mount_fixture/usr/bin/ojousama-lite\n' }), /Close Ojousama Lite/)
+})
+
+test('process fixtures apply the selected platform separator rather than the test host', () => {
+  const windowsTarget = path.win32.join('C:\\Users\\test', 'Applications', 'Ojousama Lite.app')
+  const windowsExecutable = path.win32.join(windowsTarget, 'bin', 'ojousama-lite.exe')
+  assert.throws(() => assertNotRunning(windowsTarget, { platform: 'win32', processes: `123 ${windowsExecutable}\n` }), /Close Ojousama Lite/)
+  assert.throws(() => assertNotRunning(windowsTarget, { platform: 'win32', processes: `123 ${windowsExecutable.replaceAll('\\', '/')}\n` }), /Close Ojousama Lite/)
+  const linuxTarget = path.posix.join('/home/test', '.local', 'share', 'ojousama-lite', 'app')
+  assert.throws(() => assertNotRunning(linuxTarget, { platform: 'linux', processes: `123 ${path.posix.join(linuxTarget, 'Ojousama Lite.AppImage')}\n` }), /Close Ojousama Lite/)
+  assert.doesNotThrow(() => assertNotRunning('/Users/test/Ojousama Lite.app', { platform: 'darwin', processes: '123 /Users/test/Ojousama Lite.app.backup/Contents/MacOS/ojousama-lite\n' }))
 })

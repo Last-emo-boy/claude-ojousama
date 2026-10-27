@@ -22,6 +22,30 @@ use tauri::{
 };
 use tauri_plugin_dialog::DialogExt;
 
+// Opt-in numeric trace for real pointer/inertia acceptance; no prompts or screen data.
+fn trace_motion(window: &WebviewWindow, motion: &Motion) {
+    if !std::env::args().any(|arg| arg == "--diagnostics") {
+        return;
+    }
+    use std::io::Write;
+    let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+        let path = window
+            .app_handle()
+            .path()
+            .app_data_dir()?
+            .join("motion.jsonl");
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(path)?;
+        writeln!(file, "{}", serde_json::to_string(motion)?)?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        eprintln!("motion diagnostics: {error}");
+    }
+}
+
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Settings {
@@ -222,6 +246,7 @@ fn drag_begin(window: WebviewWindow, state: tauri::State<State>) -> Result<(), S
     motion.begin((cursor.x, cursor.y));
     let snapshot = motion.clone();
     drop(motion);
+    trace_motion(&window, &snapshot);
     window
         .emit("motion:update", snapshot)
         .map_err(|e| e.to_string())
@@ -232,6 +257,7 @@ fn drag_end(window: WebviewWindow, state: tauri::State<State>) -> Result<(), Str
     motion.release();
     let snapshot = motion.clone();
     drop(motion);
+    trace_motion(&window, &snapshot);
     window
         .emit("motion:update", snapshot)
         .map_err(|e| e.to_string())
@@ -345,6 +371,7 @@ fn start_motion(
                 ));
             }
             if previous != snapshot.phase {
+                trace_motion(&window, &snapshot);
                 let _ = window.emit("motion:update", snapshot.clone());
             }
             let in_motion = snapshot.phase != "settled";
