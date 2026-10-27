@@ -308,8 +308,16 @@ fn panel(app: &tauri::AppHandle) -> Result<(), String> {
     window.set_focus().map_err(|e| e.to_string())
 }
 #[tauri::command]
-fn show_panel(app: tauri::AppHandle, tab: Option<String>) -> Result<(), String> {
+fn show_panel(
+    app: tauri::AppHandle,
+    tab: Option<String>,
+    task_id: Option<u64>,
+) -> Result<(), String> {
     panel(&app)?;
+    if let Some(id) = task_id {
+        app.emit_to("panel", "task:select", id)
+            .map_err(|e| e.to_string())?;
+    }
     if let Some(tab) = tab {
         app.emit_to("panel", "panel:tab", tab)
             .map_err(|e| e.to_string())?;

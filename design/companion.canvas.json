@@ -2475,6 +2475,709 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "Faw5i",
+      "x": 2000,
+      "y": 780,
+      "name": "05 · 从气泡到下一步",
+      "clip": true,
+      "width": 1280,
+      "height": 560,
+      "fill": "$paper",
+      "cornerRadius": 16,
+      "layout": "vertical",
+      "gap": 24,
+      "padding": 30,
+      "children": [
+        {
+          "type": "text",
+          "id": "KWFdL",
+          "name": "下一步标题",
+          "fill": "$ink",
+          "content": "从提示到下一步",
+          "fontFamily": "Noto Sans SC",
+          "fontSize": 24,
+          "fontWeight": "600"
+        },
+        {
+          "type": "frame",
+          "id": "cc7pp",
+          "name": "四种明确去向",
+          "width": "fill_container",
+          "height": "fill_container",
+          "gap": 20,
+          "children": [
+            {
+              "type": "frame",
+              "id": "Pn9RY",
+              "name": "01  聊天 闭环",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "gap": 14,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "p3iLyA",
+                  "name": "01  聊天 标签",
+                  "fill": "$muted",
+                  "content": "01  聊天",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "pKYXC",
+                  "name": "01  聊天 桌宠与气泡",
+                  "width": "fill_container",
+                  "height": 298,
+                  "layout": "vertical",
+                  "gap": 14,
+                  "justifyContent": "end",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "sZDLH",
+                      "name": "01  聊天 气泡",
+                      "width": "fill_container",
+                      "fill": "#FFFCF6",
+                      "cornerRadius": 14,
+                      "stroke": "#E2D7C6",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 12,
+                      "padding": 15,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "XxW9h",
+                          "name": "02  一句话互动 气泡顶栏",
+                          "width": "fill_container",
+                          "justifyContent": "space_between",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "chClA",
+                              "name": "02  一句话互动 气泡名称",
+                              "fill": "$accent",
+                              "content": "大小姐",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "text",
+                              "id": "d2Zt7",
+                              "name": "02  一句话互动 关闭",
+                              "fill": "$muted",
+                              "content": "×",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 14,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "c3IEn",
+                          "name": "01  聊天 提示",
+                          "fill": "$ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "这一页的重点，很清楚了。",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Noto Sans SC",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "J9nsw",
+                          "name": "01  聊天 气泡操作",
+                          "width": "fill_container",
+                          "justifyContent": "end",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "tpIFz",
+                              "name": "01  聊天 下一步按钮",
+                              "fill": "$accent",
+                              "cornerRadius": 6,
+                              "padding": [
+                                7,
+                                12
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "Bb2q7",
+                                  "name": "01  聊天 按钮文案",
+                                  "fill": "$paper",
+                                  "content": "聊两句",
+                                  "fontFamily": "Noto Sans SC",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Ynk3M",
+                      "name": "01  聊天 角色",
+                      "clip": true,
+                      "width": 88.36065573770492,
+                      "height": 110,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "hCnXn",
+                          "x": 0,
+                          "y": 0,
+                          "name": "01  聊天 动作帧",
+                          "fill": {
+                            "type": "image",
+                            "enabled": true,
+                            "url": "../assets/sprites/wave.png",
+                            "mode": "stretch"
+                          },
+                          "width": 353.44262295081967,
+                          "height": 110
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "HfmS1",
+                  "name": "01  聊天 去向说明",
+                  "fill": "$muted",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "回到聊天，输入框已就绪。",
+                  "lineHeight": 1.6,
+                  "textAlign": "center",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "j3K4g",
+              "name": "02  任务 闭环",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "gap": 14,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "j5C34",
+                  "name": "02  任务 标签",
+                  "fill": "$muted",
+                  "content": "02  任务",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "Uchtz",
+                  "name": "02  任务 桌宠与气泡",
+                  "width": "fill_container",
+                  "height": 298,
+                  "layout": "vertical",
+                  "gap": 14,
+                  "justifyContent": "end",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "qcRMk",
+                      "name": "02  任务 气泡",
+                      "width": "fill_container",
+                      "fill": "#FFFCF6",
+                      "cornerRadius": 14,
+                      "stroke": "#E2D7C6",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 12,
+                      "padding": 15,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "Wo0Mn",
+                          "name": "02  一句话互动 气泡顶栏",
+                          "width": "fill_container",
+                          "justifyContent": "space_between",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "isr0d",
+                              "name": "02  一句话互动 气泡名称",
+                              "fill": "$accent",
+                              "content": "大小姐",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "text",
+                              "id": "uECTA",
+                              "name": "02  一句话互动 关闭",
+                              "fill": "$muted",
+                              "content": "×",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 14,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "zVzUy",
+                          "name": "02  任务 提示",
+                          "fill": "$ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "有一步需要你确认。",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Noto Sans SC",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "f1BDt",
+                          "name": "02  任务 气泡操作",
+                          "width": "fill_container",
+                          "justifyContent": "end",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "D6FY7x",
+                              "name": "02  任务 下一步按钮",
+                              "fill": "$accent",
+                              "cornerRadius": 6,
+                              "padding": [
+                                7,
+                                12
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "M1TCrh",
+                                  "name": "02  任务 按钮文案",
+                                  "fill": "$paper",
+                                  "content": "查看任务",
+                                  "fontFamily": "Noto Sans SC",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "i6JUq3",
+                      "name": "02  任务 角色",
+                      "clip": true,
+                      "width": 116.94736842105263,
+                      "height": 110,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "z6PGPT",
+                          "x": 0,
+                          "y": 0,
+                          "name": "02  任务 动作帧",
+                          "fill": {
+                            "type": "image",
+                            "enabled": true,
+                            "url": "../assets/sprites/thinking.png",
+                            "mode": "stretch"
+                          },
+                          "width": 467.7894736842105,
+                          "height": 110
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "SS54d",
+                  "name": "02  任务 去向说明",
+                  "fill": "$muted",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "打开这条任务，不跳到旧记录。",
+                  "lineHeight": 1.6,
+                  "textAlign": "center",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "s6Wjk",
+              "name": "03  目标 闭环",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "gap": 14,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "CPAGJ",
+                  "name": "03  目标 标签",
+                  "fill": "$muted",
+                  "content": "03  目标",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "OYZhy",
+                  "name": "03  目标 桌宠与气泡",
+                  "width": "fill_container",
+                  "height": 298,
+                  "layout": "vertical",
+                  "gap": 14,
+                  "justifyContent": "end",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "qUUCx",
+                      "name": "03  目标 气泡",
+                      "width": "fill_container",
+                      "fill": "#FFFCF6",
+                      "cornerRadius": 14,
+                      "stroke": "#E2D7C6",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 12,
+                      "padding": 15,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "l2qZC",
+                          "name": "02  一句话互动 气泡顶栏",
+                          "width": "fill_container",
+                          "justifyContent": "space_between",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "o3oiA",
+                              "name": "02  一句话互动 气泡名称",
+                              "fill": "$accent",
+                              "content": "大小姐",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "text",
+                              "id": "dJvuE",
+                              "name": "02  一句话互动 关闭",
+                              "fill": "$muted",
+                              "content": "×",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 14,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "fC24M",
+                          "name": "03  目标 提示",
+                          "fill": "$ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "目标跟进有新结果，来看看吧。",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Noto Sans SC",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "oOgVR",
+                          "name": "03  目标 气泡操作",
+                          "width": "fill_container",
+                          "justifyContent": "end",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "z71dF",
+                              "name": "03  目标 下一步按钮",
+                              "fill": "$accent",
+                              "cornerRadius": 6,
+                              "padding": [
+                                7,
+                                12
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "EGTqv",
+                                  "name": "03  目标 按钮文案",
+                                  "fill": "$paper",
+                                  "content": "查看目标",
+                                  "fontFamily": "Noto Sans SC",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "YIjdz",
+                      "name": "03  目标 角色",
+                      "clip": true,
+                      "width": 88.91666666666667,
+                      "height": 110,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "ON3gv",
+                          "x": 0,
+                          "y": 0,
+                          "name": "03  目标 动作帧",
+                          "fill": {
+                            "type": "image",
+                            "enabled": true,
+                            "url": "../assets/sprites/happy.png",
+                            "mode": "stretch"
+                          },
+                          "width": 355.6666666666667,
+                          "height": 110
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "X7FnOl",
+                  "name": "03  目标 去向说明",
+                  "fill": "$muted",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "直接到目标页继续处理。",
+                  "lineHeight": 1.6,
+                  "textAlign": "center",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "AThFO",
+              "name": "04  成长 闭环",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "gap": 14,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "g3QzYN",
+                  "name": "04  成长 标签",
+                  "fill": "$muted",
+                  "content": "04  成长",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "N0LCL0",
+                  "name": "04  成长 桌宠与气泡",
+                  "width": "fill_container",
+                  "height": 298,
+                  "layout": "vertical",
+                  "gap": 14,
+                  "justifyContent": "end",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "XhqyB",
+                      "name": "04  成长 气泡",
+                      "width": "fill_container",
+                      "fill": "#FFFCF6",
+                      "cornerRadius": 14,
+                      "stroke": "#E2D7C6",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 12,
+                      "padding": 15,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "yNTA3",
+                          "name": "02  一句话互动 气泡顶栏",
+                          "width": "fill_container",
+                          "justifyContent": "space_between",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "u0Buqx",
+                              "name": "02  一句话互动 气泡名称",
+                              "fill": "$accent",
+                              "content": "大小姐",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "text",
+                              "id": "BszSl",
+                              "name": "02  一句话互动 关闭",
+                              "fill": "$muted",
+                              "content": "×",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 14,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "TNuzv",
+                          "name": "04  成长 提示",
+                          "fill": "$ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "我把最近的事整理好了。",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Noto Sans SC",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "EmrLk",
+                          "name": "04  成长 气泡操作",
+                          "width": "fill_container",
+                          "justifyContent": "end",
+                          "children": [
+                            {
+                              "type": "frame",
+                              "id": "E2Pge2",
+                              "name": "04  成长 下一步按钮",
+                              "fill": "$accent",
+                              "cornerRadius": 6,
+                              "padding": [
+                                7,
+                                12
+                              ],
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "id": "HGT1Y",
+                                  "name": "04  成长 按钮文案",
+                                  "fill": "$paper",
+                                  "content": "看看成长",
+                                  "fontFamily": "Noto Sans SC",
+                                  "fontSize": 12,
+                                  "fontWeight": "normal"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "qWD2T",
+                      "name": "04  成长 角色",
+                      "clip": true,
+                      "width": 113.26732673267327,
+                      "height": 110,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "sbvyi",
+                          "x": 0,
+                          "y": 0,
+                          "name": "04  成长 动作帧",
+                          "fill": {
+                            "type": "image",
+                            "enabled": true,
+                            "url": "../assets/sprites/read.png",
+                            "mode": "stretch"
+                          },
+                          "width": 453.0693069306931,
+                          "height": 110
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "a2C2B",
+                  "name": "04  成长 去向说明",
+                  "fill": "$muted",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "笔记和日记都在成长页。",
+                  "lineHeight": 1.6,
+                  "textAlign": "center",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "id": "dpxcb",
+          "name": "点击后才切换页面",
+          "fill": "$muted",
+          "content": "点击后才打开面板；提示出现时，不抢走当前窗口的焦点。",
+          "fontFamily": "Noto Sans SC",
+          "fontSize": 13,
+          "fontWeight": "normal"
+        }
+      ]
     }
   ]
 }

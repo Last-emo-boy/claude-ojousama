@@ -1,7 +1,7 @@
 import { isActive, orderedTasks, upsertTask, currentTask, selectedTask, presentation, settingsFrom, pendingKey, alphaBands, placeBands, mirrorBands } from './model.mjs'
 import { createDragQueue } from './drag.mjs'
 import { mountCompanion } from './companion.mjs'
-import { createBubbleState } from './bubble.mjs'
+import { createBubbleState, bubbleAction } from './bubble.mjs'
 import { spritePlayback } from './behavior.mjs'
 
 const app = document.querySelector('#app')
@@ -114,12 +114,12 @@ function mountPet() {
   spriteContext.setTransform(ratio, 0, 0, ratio, 0, 0)
   spriteContext.imageSmoothingEnabled = false
   $('pet-open').addEventListener('click', event => action(event.currentTarget, () => {
-    const notice=bubbles.read()
-    return notice?.source==='clipboard'?invoke('clipboard_offer_open',{token:notice.token,action:'preview'}):invoke('show_panel',notice?.source==='alert'?{tab:'todos'}:{})
+    const next=bubbleAction(bubbles.read())
+    return invoke(next.command,next.args)
   }))
   $('pet-dismiss').addEventListener('click', () => { bubbles.dismiss(); renderPet() })
   const menu = visible => { $('pet-menu').hidden = !visible; canvas.setAttribute('aria-expanded', String(visible)); renderPet() }
-  $('pet-menu-chat').addEventListener('click', () => { menu(false); invoke('show_panel').catch(showError) })
+  $('pet-menu-chat').addEventListener('click', () => { menu(false); invoke('show_panel',{tab:'chat'}).catch(showError) })
   $('pet-menu-touch').addEventListener('click', event => action(event.currentTarget, async () => { await invoke('companion_command', { command: 'pet:touch', args: {} }); menu(false) }))
   $('pet-menu-actions').addEventListener('click', () => { menu(false); invoke('show_panel', { tab: 'actions' }).catch(showError) })
   $('pet-menu-quiet').addEventListener('click', event => action(event.currentTarget, async () => { await invoke('companion_command', { command: 'screen:pause', args: { minutes: 60 } }); await invoke('motion_command',{command:'pause'}); menu(false) }))
@@ -137,7 +137,7 @@ function mountPet() {
   canvas.addEventListener('keydown', event => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
-      invoke('show_panel').catch(showError)
+      invoke('show_panel',{tab:'chat'}).catch(showError)
     }
     if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); menu(true); $('pet-menu-chat').focus() }
   })
@@ -179,7 +179,7 @@ function mountPet() {
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
     try {
       if (ending.drag) await ending.drag.end(point)
-      if (click) await invoke('show_panel')
+      if (click) await invoke('show_panel',{tab:'chat'})
     } catch (error) {
       showError(error)
     }
@@ -333,7 +333,7 @@ function renderPet() {
   $('pet-error').textContent = notice?.source === 'error' ? notice.text : ''
   $('pet-bubble').classList.toggle('has-error', notice?.source === 'error')
   $('pet-stop').classList.toggle('hidden', !isActive(task))
-  $('pet-open').textContent = notice?.source === 'alert' ? '全部提醒' : notice?.source === 'clipboard' ? '看看文字' : notice?.source === 'task' ? '查看任务' : '聊两句'
+  $('pet-open').textContent = bubbleAction(notice).label
   renderAlertActions(notice,!$('pet-bubble').hidden)
   $('pet-perch').textContent = state.motion.phase === 'perched' ? '下来' : '爬上窗口'
   $('pet-perch').classList.toggle('hidden', !state.positionable)
@@ -379,7 +379,7 @@ function mountPanel() {
       <div class="task-section-heading"><h2>任务</h2><span id="task-count"></span></div>
       <div id="empty-state" class="empty-state"><strong>先交给我一件小事</strong><p>进度、问题和结果都会留在这里。</p></div>
       <nav id="task-history" class="task-history" aria-label="任务历史"></nav>
-      <article id="task-detail" class="task-detail hidden">
+      <article id="task-detail" class="task-detail hidden" tabindex="-1" aria-labelledby="detail-title">
         <div class="detail-top"><h3 id="detail-title"></h3><div class="detail-actions"><button id="detail-stop" class="danger" type="button">停止</button><button id="detail-retry" type="button">再试一次</button><button id="copy-output" type="button">复制结果</button></div></div>
         <p id="detail-meta" class="detail-meta"></p>
         <div id="detail-activity" role="status"></div>
@@ -610,6 +610,10 @@ async function boot() {
   else mountPanel()
   if (!window.__TAURI__) throw new Error('请从 Claude Ojousama 应用打开这个界面')
   await window.__TAURI__.event.listen('task:update', event => acceptTask(event.payload))
+  if(view==='panel') await window.__TAURI__.event.listen('task:select',event=>{
+    state.selected=event.payload
+    if(state.tasks.some(task=>task.id===event.payload))renderPanel()
+  })
   if (view === 'pet') {
     await window.__TAURI__.event.listen('companion:alert',event=>{bubbles.alert(event.payload);renderPet()})
     await window.__TAURI__.event.listen('clipboard:offer',event=>{bubbles.clipboard(event.payload);renderPet()})
@@ -640,7 +644,16 @@ async function boot() {
     await clipboardRequest()
     await clipboardOffer()
     await window.__TAURI__.event.listen('companion:update', event => companionPanel.update(event.payload))
-    await window.__TAURI__.event.listen('panel:tab', event => companionPanel.select(event.payload))
+    await window.__TAURI__.event.listen('panel:tab', event => {
+      companionPanel.select(event.payload,{focus:true})
+      if(event.payload==='tasks') {
+        renderPanel()
+        if(!$('task-detail').classList.contains('hidden')) {
+          $('task-detail').scrollIntoView({block:'start'})
+          $('task-detail').focus({preventScroll:true})
+        }
+      }
+    })
     await window.__TAURI__.event.listen('motion:update',event=>companionPanel.motionUpdated(event.payload))
   } else if (view === 'pet') {
     await window.__TAURI__.event.listen('companion:action', event => {if(event.payload.kind==='note.show')invoke('note_show').catch(showError)})

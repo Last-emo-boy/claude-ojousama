@@ -125,6 +125,9 @@ impl Service {
         (self.emit)("companion:update", self.snapshot());
     }
     fn gesture(&self, text: &str, animation: &str, duration: u64, autonomous: bool) {
+        self.bubble(text, animation, duration, autonomous, "chat");
+    }
+    fn bubble(&self, text: &str, animation: &str, duration: u64, autonomous: bool, tab: &str) {
         let now = companion::now();
         if !(autonomous && animation == "nap") {
             self.activity_until
@@ -132,11 +135,14 @@ impl Service {
         }
         (self.emit)(
             "companion:bubble",
-            json!({"text":text,"animation":animation,"until":now+duration,"autonomous":autonomous}),
+            json!({"text":text,"animation":animation,"until":now+duration,"autonomous":autonomous,"tab":tab}),
         );
     }
     pub fn say(&self, text: &str, animation: &str) {
         self.gesture(text, animation, 12_000, false);
+    }
+    fn say_to(&self, text: &str, animation: &str, tab: &str) {
+        self.bubble(text, animation, 12_000, false, tab);
     }
     pub fn activity_busy(&self) -> bool {
         self.activity_until.load(Ordering::Relaxed) > companion::now()
@@ -1139,7 +1145,7 @@ impl Service {
                 self.data.change(|d|{if let Some(g)=d["goals"].as_array_mut().unwrap().iter_mut().find(|g|g["id"]==goal["id"]){
                     if complete{g["status"]=json!("done");}else if let Some(question)=&question{g["status"]=json!("waiting");g["lastQuestion"]=question["question"].clone();g["question"]=question.clone();}g["nextAt"]=json!(companion::next_check(g,now));
                     g["log"].as_array_mut().unwrap().push(json!({"ts":now,"text":if task.status=="completed"{task.output.clone()}else{task.error.clone().unwrap_or_else(||"任务已停止".into())}}));}Ok(())})?;
-                self.say("目标跟进有新结果，来看看吧。", "wave");
+                self.say_to("目标跟进有新结果，来看看吧。", "wave", "goals");
                 self.changed();
             }
         }
@@ -1279,7 +1285,7 @@ impl Service {
             );
             Ok(())
         })?;
-        self.say(
+        self.say_to(
             &insight.unwrap_or_else(|| match kind {
                 "reflect" => "我把最近的事整理好了，成长页里有新笔记。".into(),
                 "summary" => "今天的小结写好了，辛苦啦。".into(),
@@ -1295,6 +1301,11 @@ impl Service {
                 _ => "今天的重点整理好了，来看看吧。".into(),
             }),
             if kind == "reflect" { "write" } else { "wave" },
+            if kind == "reflect" {
+                "growth"
+            } else {
+                "activity"
+            },
         );
         Ok(())
     }
@@ -1743,6 +1754,35 @@ mod behavior_tests {
             .map(|(_, v)| v["animation"].clone())
             .collect();
         assert_eq!(scenes, vec![json!("nap"), json!("stretch")]);
+        service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn background_results_carry_destinations_but_never_open_a_panel() {
+        let (service, events, root) = fixture("destinations");
+        for kind in ["reflect", "brief", "pulse", "tip", "summary"] {
+            let output = if kind == "reflect" {
+                json!({"notes":["今天完成一小步。"],"diary":"一起完成了今天的工作。"}).to_string()
+            } else {
+                "今天完成一小步。".into()
+            };
+            let task:TaskView=serde_json::from_value(json!({"id":1,"prompt":"受控结果","workspace":"fixture","permission":"read-only","status":"completed","activity":"","output":output,"createdAt":1,"finishedAt":2,"pending":null,"error":null,"threadId":null})).unwrap();
+            service.finish_background(kind, &task).unwrap();
+            let events = events.lock().unwrap();
+            assert_eq!(
+                events.last().unwrap().1["tab"],
+                if kind == "reflect" {
+                    "growth"
+                } else {
+                    "activity"
+                }
+            );
+            assert!(events.iter().all(|(name, _)| name == "companion:bubble"));
+        }
+        service.say_to("目标有新结果。", "wave", "goals");
+        assert_eq!(events.lock().unwrap().last().unwrap().1["tab"], "goals");
+        assert!(service.tasks.list().is_empty());
+        assert!(service.background.list().is_empty());
         service.shutdown();
         std::fs::remove_dir_all(root).unwrap();
     }

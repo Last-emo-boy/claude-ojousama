@@ -1,5 +1,12 @@
 import { isActive, pendingKey, presentation } from './model.mjs'
 
+const destinations = { chat:'聊两句', tasks:'查看任务', todos:'全部提醒', goals:'查看目标', growth:'看看成长', activity:'查看动态' }
+export function bubbleAction(notice) {
+  if (notice?.source==='clipboard') return {command:'clipboard_offer_open',args:{token:notice.token,action:'preview'},label:'看看文字'}
+  const tab = notice?.source==='task' ? 'tasks' : notice?.source==='alert' ? 'todos' : notice?.source==='speech' && Object.hasOwn(destinations,notice.tab) ? notice.tab : 'chat'
+  return {command:'show_panel',args:{tab,...(notice?.source==='task'?{taskId:notice.taskId}:{})},label:destinations[tab]}
+}
+
 // Task streams are noisy. Only a new state (not every token) earns a notification.
 export function createBubbleState() {
   const seen = new Map()
@@ -38,7 +45,7 @@ export function createBubbleState() {
     },
     speak(value, now = Date.now()) {
       const text = String(value?.text || '').trim()
-      if (text) speech = { source: 'speech', label: '大小姐', text, until: Math.min(Number(value.until) || now + 12000, now + 30000) }
+      if (text) speech = { source: 'speech', label: '大小姐', text, tab:value.tab, until: Math.min(Number(value.until) || now + 12000, now + 30000) }
     },
     alert(value, now = Date.now()) {
       if (value?.clear !== undefined) {

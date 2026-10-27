@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createBubbleState } from './bubble.mjs'
+import { createBubbleState, bubbleAction } from './bubble.mjs'
 
 const task = (status, pending = null) => ({ id: 1, status, pending, activity: '处理任务' })
 
@@ -118,4 +118,26 @@ test('clipboard offers are finite, dismissible, and never displace decisions or 
   assert.equal(state.read(1007).source,'clipboard');assert.equal(state.read(20000),null)
   state.alert({id:'a',token:1,text:'提醒',until:30000},21000)
   state.clipboard({clear:2},21001);assert.equal(state.read(21002).source,'alert')
+})
+
+test('bubble actions reach the current intent, not the last panel tab', () => {
+  assert.deepEqual(bubbleAction(null),{command:'show_panel',args:{tab:'chat'},label:'聊两句'})
+  assert.deepEqual(bubbleAction({source:'task',taskId:7}),{command:'show_panel',args:{tab:'tasks',taskId:7},label:'查看任务'})
+  assert.equal(bubbleAction({source:'alert'}).args.tab,'todos')
+  assert.deepEqual(bubbleAction({source:'clipboard',token:9}),{command:'clipboard_offer_open',args:{token:9,action:'preview'},label:'看看文字'})
+  for(const [tab,label]of [['goals','查看目标'],['growth','看看成长'],['activity','查看动态']]) {
+    const state=createBubbleState();state.speak({text:'有新结果',tab,until:12000},0)
+    assert.equal(bubbleAction(state.read(1)).args.tab,tab)
+    assert.equal(bubbleAction(state.read(1)).label,label)
+    assert.equal(state.read(12000),null)
+  }
+})
+
+test('old speech still opens chat and unexpected destinations cannot replace fixed task or alert routes', () => {
+  const state=createBubbleState();state.speak({text:'聊两句',until:12000},0)
+  assert.equal(bubbleAction(state.read(1)).args.tab,'chat')
+  assert.equal(bubbleAction({source:'speech',tab:'https://example.com'}).args.tab,'chat')
+  assert.equal(bubbleAction({source:'speech',tab:'toString'}).args.tab,'chat')
+  assert.equal(bubbleAction({source:'task',taskId:7,tab:'goals'}).args.tab,'tasks')
+  assert.equal(bubbleAction({source:'alert',tab:'chat'}).args.tab,'todos')
 })
