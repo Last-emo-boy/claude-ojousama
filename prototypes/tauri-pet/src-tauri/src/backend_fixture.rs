@@ -5,8 +5,19 @@ fn emit(line: &str) {
     io::stdout().flush().unwrap();
 }
 fn complete(text: &str) {
+    let mut escaped = String::new();
+    for c in text.chars() {
+        match c {
+            '"' | '\\' => {
+                escaped.push('\\');
+                escaped.push(c);
+            }
+            c if c < ' ' => escaped.push_str(&format!("\\u{:04x}", c as u32)),
+            _ => escaped.push(c),
+        }
+    }
     emit(&format!(
-        r#"{{"method":"item/completed","params":{{"threadId":"thread-fixture","item":{{"id":"answer","type":"agentMessage","text":"{text}"}}}}}}"#
+        r#"{{"method":"item/completed","params":{{"threadId":"thread-fixture","item":{{"id":"answer","type":"agentMessage","text":"{escaped}"}}}}}}"#
     ));
     emit(
         r#"{"method":"turn/completed","params":{"threadId":"thread-fixture","turn":{"id":"turn-fixture","status":"completed"}}}"#,
@@ -66,7 +77,7 @@ fn main() {
             emit(
                 r#"{"method":"item/reasoning/summaryTextDelta","params":{"threadId":"thread-fixture","delta":"thinking"}}"#,
             );
-            if scenario != "restricted" { emit(
+            if !matches!(scenario.as_str(),"restricted"|"restricted-hang"|"restricted-reflect") { emit(
                 r#"{"method":"item/started","params":{"threadId":"thread-fixture","item":{"id":"command","type":"commandExecution","command":"fixture command"}}}"#,
             ); }
             if scenario == "restricted" && !line.contains("data:image/png;base64,fixture") { complete("MISSING_IMAGE");continue; }
@@ -103,7 +114,8 @@ fn main() {
                         .unwrap();
                     complete("DESCENDANT_DONE");
                 }
-                "hang" | "race-turn" => {}
+                "hang" | "race-turn" | "restricted-hang" => {}
+                "restricted-reflect" => complete(r#"{"notes":["整理了受控笔记。"]}"#),
                 _ => {
                     emit(
                         r#"{"method":"item/agentMessage/delta","params":{"threadId":"thread-fixture","itemId":"answer","delta":"MOCK_"}}"#,

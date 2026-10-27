@@ -4,7 +4,7 @@ use std::sync::{
     OnceLock,
 };
 
-fn fixture() -> PathBuf {
+pub(super) fn fixture() -> PathBuf {
     static BINARY: OnceLock<PathBuf> = OnceLock::new();
     BINARY
         .get_or_init(|| {

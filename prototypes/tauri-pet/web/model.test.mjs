@@ -249,6 +249,26 @@ test('text-ready observer is usable without screen recording and disabled state 
   assert.equal(observationStatus({ enabled: false }, observer), '未开启主动观察')
   assert.equal(observationStatus({ enabled: true }, { capabilities: { ready: false, screenSupported: false } }), '当前桌面需系统主动共享，后台观察不可用')
 })
+test('automatic observation explains suspension without masking explicit manual work', async () => {
+  const { observationStatus } = await import('./observation.mjs')
+  const ready = { capabilities: { ready: true } }
+  const expected = {
+    starting: '正在恢复桌面状态…', locked: '解锁后继续主动观察',
+    paused: '主动观察已暂停', quiet: '安静时段结束后继续主动观察',
+    focus: '专注结束后继续主动观察', desktop: '显示桌宠并收起面板后继续主动观察',
+    task: '任务结束后继续主动观察',
+  }
+  for (const [pauseReason, label] of Object.entries(expected)) {
+    const observer = { ...ready, pauseReason }
+    assert.equal(observationStatus({ enabled: true }, observer), label)
+    assert.equal(observationStatus({ enabled: false }, observer), '未开启主动观察')
+    assert.equal(observationStatus({ enabled: false, pausedUntil: 2000 }, { ...observer, running: true }, 1000), '正在理解窗口内容')
+  }
+  assert.equal(observationStatus({ enabled: true }, { ...ready, pauseReason: 'future' }), '已开启 · 安静运行')
+  assert.match(observationStatus({ enabled: true, pausedUntil: 2000 }, { ...ready, pauseReason: 'desktop' }, 1000), /^暂停至 /)
+  assert.equal(observationStatus({ enabled: true }, { ...ready, error: '读取失败', pauseReason: 'desktop' }), '读取失败')
+  assert.equal(observationStatus({ enabled: true }, { capabilities: { ready: false, screenSupported: false }, pauseReason: 'desktop' }), '当前桌面需系统主动共享，后台观察不可用')
+})
 
 
 test('clipboard actions preserve drafts, stay as data and create compact local todos', async () => {

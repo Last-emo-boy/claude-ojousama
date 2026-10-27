@@ -34,6 +34,19 @@ struct Job {
     epoch: u64,
     deadline: u64,
 }
+impl Job {
+    fn observation(&self) -> bool {
+        matches!(self.kind.as_str(), "look" | "manual-look")
+    }
+    fn valid(&self, epoch: u64, stopping: bool) -> bool {
+        !stopping && (!self.observation() || self.epoch == epoch)
+    }
+}
+#[derive(Clone, Copy)]
+struct Preparation {
+    epoch: u64,
+    manual: bool,
+}
 #[derive(Clone)]
 struct AlertDelivery {
     id: Value,
@@ -66,7 +79,7 @@ struct Runtime {
     job: Option<Job>,
     looks: VecDeque<u64>,
     last_look: u64,
-    preparing: bool,
+    preparing: Option<Preparation>,
     last_line: String,
     chat: Option<u64>,
     chat_backend: String,
@@ -81,6 +94,7 @@ struct Runtime {
     alert_token: u64,
     behavior: behavior::State,
     body_context: behavior::Context,
+    ambient_pause: Option<&'static str>,
     clipboard: clipboard_watch::State,
 }
 impl Service {
@@ -119,7 +133,19 @@ impl Service {
                     .find(|a| companion::id(&a["id"]) == companion::id(&delivery.id))
                     .map(|a| alert_notice(delivery, a))
             });
-        json!({"clipboard":{"offer":r.clipboard.notice(companion::now()),"error":r.clipboard.error,"supported":observer::screen_supported()},"data":data,"alert":alert,"chatTask":r.chat,"observer":{"status":r.status,"error":r.error,"running":r.job.is_some(),"permission":observer::permission(),"capabilities":capabilities}})
+        let running = r
+            .job
+            .as_ref()
+            .is_some_and(|job| job.observation() && job.valid(r.epoch, r.stopping))
+            || r.preparing
+                .is_some_and(|p| p.epoch == r.epoch && !r.stopping);
+        let busy = self.tasks.list().iter().any(|t| !done(t));
+        let pause = if busy {
+            Some("task")
+        } else {
+            ambient_reason(&data, r.body_context, companion::now())
+        };
+        json!({"clipboard":{"offer":r.clipboard.notice(companion::now()),"error":r.clipboard.error,"supported":observer::screen_supported()},"data":data,"alert":alert,"chatTask":r.chat,"observer":{"status":r.status,"error":r.error,"running":running,"pauseReason":pause,"permission":observer::permission(),"capabilities":capabilities}})
     }
     pub fn changed(&self) {
         (self.emit)("companion:update", self.snapshot());
@@ -149,8 +175,65 @@ impl Service {
     }
     pub fn body_context(&self, context: behavior::Context) {
         let mut r = self.runtime.lock().unwrap();
-        if !r.stopping {
-            r.body_context = context;
+        if r.stopping {
+            return;
+        }
+        r.body_context = context;
+        drop(r);
+        self.reconcile_ambient(&self.data.snapshot());
+    }
+    fn cancel_observation(&self, r: &mut Runtime, automatic_only: bool) {
+        if let Some(job) = r
+            .job
+            .as_ref()
+            .filter(|job| job.observation() && (!automatic_only || job.kind == "look"))
+        {
+            if let Err(error) = self.background.cancel(job.id) {
+                if !self
+                    .background
+                    .list()
+                    .iter()
+                    .any(|task| task.id == job.id && done(task))
+                {
+                    r.error = format!("停止观察失败：{error}");
+                }
+            }
+        }
+    }
+    fn revoke_ambient(&self, r: &mut Runtime) {
+        let active = r
+            .job
+            .as_ref()
+            .is_some_and(|job| job.kind == "look" && job.epoch == r.epoch)
+            || r.preparing.is_some_and(|p| !p.manual && p.epoch == r.epoch);
+        let pending = r.pending_ambient.take().is_some();
+        if active || pending {
+            r.capture_target = None;
+            if active {
+                r.epoch += 1;
+                r.status.clear();
+                self.cancel_observation(r, true);
+            }
+        }
+    }
+    fn reconcile_ambient(&self, d: &Value) {
+        let mut r = self.runtime.lock().unwrap();
+        if r.stopping {
+            return;
+        }
+        let reason = if self.tasks.list().iter().any(|t| !done(t)) {
+            Some("task")
+        } else {
+            ambient_reason(d, r.body_context, companion::now())
+        };
+        if reason.is_some() {
+            self.revoke_ambient(&mut r);
+        }
+        let changed = r.ambient_pause != reason;
+        r.ambient_pause = reason;
+        drop(r);
+        if changed {
+            self.changed();
         }
     }
     fn habits(&self, d: &Value, idle: f64, busy: bool) -> Result<(), String> {
@@ -163,7 +246,7 @@ impl Service {
             let blocked = busy
                 || self.activity_busy()
                 || r.job.is_some()
-                || r.preparing
+                || r.preparing.is_some()
                 || r.alert.is_some()
                 || r.clipboard.notice(now).is_some()
                 || r.pending_ambient.is_some();
@@ -233,7 +316,7 @@ impl Service {
             && !busy
             && !self.activity_busy()
             && r.job.is_none()
-            && !r.preparing
+            && r.preparing.is_none()
             && r.alert.is_none()
             && r.pending_ambient.is_none()
             && idle.is_finite()
@@ -550,11 +633,9 @@ impl Service {
             r.pending_ambient = None;
             r.perch = None;
             r.capture_target = None;
-            if let Some(job) = &r.job {
-                let _ = self.background.cancel(job.id);
-            }
-            r.status.clear();
             r.error.clear();
+            self.cancel_observation(&mut r, false);
+            r.status.clear();
             result
         } else {
             self.data.apply(command, args)?
@@ -565,6 +646,7 @@ impl Service {
         if matches!(command, "screen:pause" | "observation:set") {
             self.clipboard_reset();
         }
+        self.reconcile_ambient(&self.data.snapshot());
         self.clear_stale_alert();
         self.changed();
         Ok(result)
@@ -660,12 +742,8 @@ impl Service {
             return;
         }
         if r.capture_target.is_some() && r.capture_target != target {
-            r.epoch += 1;
-            r.pending_ambient = None;
+            self.revoke_ambient(&mut r);
             r.capture_target = None;
-            if let Some(job) = &r.job {
-                let _ = self.background.cancel(job.id);
-            }
         }
         r.perch = target.map(|target| (target, companion::now() + 120_000));
     }
@@ -678,6 +756,21 @@ impl Service {
         manual: bool,
         expected: Option<Target>,
     ) -> Result<(), String> {
+        self.look_with(manual, expected, |d| {
+            observer::capture(
+                d["observation"]["excludeApps"].as_str().unwrap_or(""),
+                chosen,
+                observer::text_enabled(&d["observation"]),
+                expected,
+            )
+        })
+    }
+    fn look_with(
+        &self,
+        manual: bool,
+        expected: Option<Target>,
+        capture: impl FnOnce(&Value) -> Result<observer::Capture, String>,
+    ) -> Result<(), String> {
         let now = companion::now();
         let (d, epoch) = {
             let mut r = self.runtime.lock().unwrap();
@@ -685,7 +778,7 @@ impl Service {
             if r.stopping {
                 return Err("应用正在退出".into());
             }
-            if r.job.is_some() || r.preparing {
+            if r.job.is_some() || r.preparing.is_some() {
                 return Err("已经在思考一件事了".into());
             }
             if !manual
@@ -705,11 +798,18 @@ impl Service {
                 return Ok(());
             }
             let last_look = r.last_look;
-            if !manual && !eligible(&d, now, &mut r.looks, last_look) {
+            if !manual
+                && (ambient_reason(&d, r.body_context, now).is_some()
+                    || self.tasks.list().iter().any(|t| !done(t))
+                    || !eligible(&d, now, &mut r.looks, last_look))
+            {
                 return Ok(());
             }
             r.last_look = now;
-            r.preparing = true;
+            r.preparing = Some(Preparation {
+                epoch: r.epoch,
+                manual,
+            });
             r.capture_target = expected;
             if expected.is_some() {
                 r.perch = None;
@@ -719,19 +819,18 @@ impl Service {
             let epoch = r.epoch;
             (d, epoch)
         };
-        let capture = match observer::capture(
-            d["observation"]["excludeApps"].as_str().unwrap_or(""),
-            chosen,
-            observer::text_enabled(&d["observation"]),
-            expected,
-        ) {
+        let capture = match capture(&d) {
             Ok(v) => v,
             Err(e) => {
                 let mut r = self.runtime.lock().unwrap();
                 r.status.clear();
-                r.preparing = false;
+                r.preparing = None;
                 r.capture_target = None;
-                if r.epoch != epoch {
+                if r.epoch != epoch
+                    || (!manual
+                        && ambient_reason(&self.data.snapshot(), r.body_context, companion::now())
+                            .is_some())
+                {
                     return Ok(());
                 }
                 r.error = e.clone();
@@ -751,15 +850,21 @@ impl Service {
         // Start and revocation share one boundary: pause cannot pass between the
         // consent check and launch. The background emitter never takes this lock.
         let mut r = self.runtime.lock().unwrap();
-        if r.epoch != epoch {
-            r.preparing = false;
+        if r.epoch != epoch
+            || (!manual
+                && (ambient_reason(&self.data.snapshot(), r.body_context, companion::now())
+                    .is_some()
+                    || self.tasks.list().iter().any(|t| !done(t))))
+        {
+            r.preparing = None;
             r.status.clear();
+            r.capture_target = None;
             return Ok(());
         }
         let task = match self.background.start(request) {
             Ok(t) => t,
             Err(e) => {
-                r.preparing = false;
+                r.preparing = None;
                 r.capture_target = None;
                 r.status.clear();
                 r.error = e.clone();
@@ -768,7 +873,7 @@ impl Service {
                 return Err(e);
             }
         };
-        r.preparing = false;
+        r.preparing = None;
         r.looks.push_back(now);
         r.job = Some(Job {
             id: task.id,
@@ -790,7 +895,7 @@ impl Service {
         if r.stopping {
             return Err("应用正在退出".into());
         }
-        if r.job.is_some() || r.preparing {
+        if r.job.is_some() || r.preparing.is_some() {
             return Err("正在做另一件后台工作".into());
         }
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
@@ -914,6 +1019,7 @@ impl Service {
         Ok(json!(task))
     }
     pub fn tick(&self) -> Result<(), String> {
+        self.reconcile_ambient(&self.data.snapshot());
         self.finish_jobs()?;
         self.refresh_alerts()?;
         let d = self.data.snapshot();
@@ -974,7 +1080,7 @@ impl Service {
                 })
             {
                 runtime.pending_ambient = None;
-                if runtime.job.is_none() && !runtime.preparing {
+                if runtime.job.is_none() && runtime.preparing.is_none() {
                     runtime.capture_target = None;
                 }
                 return;
@@ -983,6 +1089,12 @@ impl Service {
         };
         if d["observation"]["enabled"] != true
             || d["observation"]["pausedUntil"].as_u64().unwrap_or(0) > companion::now()
+            || ambient_reason(
+                d,
+                self.runtime.lock().unwrap().body_context,
+                companion::now(),
+            )
+            .is_some()
         {
             return;
         }
@@ -1002,7 +1114,10 @@ impl Service {
         }
         let mut r = self.runtime.lock().unwrap();
         if let Some((line, epoch, expires)) = r.pending_ambient.take() {
-            if epoch == r.epoch && expires > companion::now() {
+            if epoch == r.epoch
+                && expires > companion::now()
+                && ambient_reason(&self.data.snapshot(), r.body_context, companion::now()).is_none()
+            {
                 r.last_line = line.clone();
                 r.capture_target = None;
                 drop(r);
@@ -1023,7 +1138,7 @@ impl Service {
                 .into_iter()
                 .find(|t| t.id == job.id && done(t))
             {
-                let valid = job.epoch == r.epoch;
+                let valid = job.valid(r.epoch, r.stopping);
                 let kind = job.kind.clone();
                 r.job = None;
                 r.status.clear();
@@ -1346,6 +1461,25 @@ impl Service {
 fn done(t: &TaskView) -> bool {
     matches!(t.status.as_str(), "completed" | "failed" | "cancelled")
 }
+fn ambient_reason(d: &Value, context: behavior::Context, now: u64) -> Option<&'static str> {
+    if !context.fresh(now) {
+        Some("starting")
+    } else if !context.unlocked {
+        Some("locked")
+    } else if d["observation"]["pausedUntil"].as_u64().unwrap_or(0) > now {
+        Some("paused")
+    } else if companion::quiet_hours(d) {
+        Some("quiet")
+    } else if d["settings"]["focusGuard"] != false
+        && d["pomodoro"]["until"].as_u64().unwrap_or(0) > now
+    {
+        Some("focus")
+    } else if !context.ambient {
+        Some("desktop")
+    } else {
+        None
+    }
+}
 
 fn eligible(d: &Value, now: u64, looks: &mut VecDeque<u64>, last: u64) -> bool {
     if d["observation"]["enabled"] != true
@@ -1353,6 +1487,8 @@ fn eligible(d: &Value, now: u64, looks: &mut VecDeque<u64>, last: u64) -> bool {
         || (d["observation"]["accessibility"] == true && !observer::text_enabled(&d["observation"]))
         || d["observation"]["pausedUntil"].as_u64().unwrap_or(0) > now
         || companion::quiet_hours(d)
+        || (d["settings"]["focusGuard"] != false
+            && d["pomodoro"]["until"].as_u64().unwrap_or(0) > now)
     {
         return false;
     }
@@ -1412,12 +1548,15 @@ mod tests {
         {
             let r = service.runtime.lock().unwrap();
             assert!(r.looks.is_empty());
-            assert!(!r.preparing);
+            assert!(r.preparing.is_none());
             assert_eq!(r.perch.unwrap().0, target);
         }
         {
             let mut r = service.runtime.lock().unwrap();
-            r.preparing = true;
+            r.preparing = Some(Preparation {
+                epoch: r.epoch,
+                manual: false,
+            });
             r.capture_target = Some(target);
             r.pending_ambient = Some(("old".into(), r.epoch, companion::now() + 120_000));
         }
@@ -1454,6 +1593,270 @@ mod tests {
 }
 
 #[cfg(test)]
+mod ambient_tests {
+    use super::*;
+    fn context() -> behavior::Context {
+        behavior::Context {
+            at: companion::now(),
+            unlocked: true,
+            ambient: true,
+            free: false,
+            may_sleep: false,
+        }
+    }
+    fn fixture(name: &str, scenario: &str) -> (Service, PathBuf) {
+        let root =
+            std::env::temp_dir().join(format!("ojousama-ambient-{name}-{}", companion::now()));
+        std::fs::create_dir_all(&root).unwrap();
+        let data = Companion::open(root.join("data.json"), None).unwrap();
+        data.change(|d| {
+            d["settings"]["quietStart"] = json!("");
+            d["observation"]["enabled"] = json!(true);
+            d["observation"]["consentVersion"] = json!(1);
+            Ok(())
+        })
+        .unwrap();
+        let mut service = Service::new(
+            data,
+            TaskManager::ephemeral(Arc::new(|_| {})),
+            root.join("work"),
+            root.join("documents"),
+            Arc::new(|_, _| {}),
+        )
+        .unwrap();
+        service.background = TaskManager::fixture(scenario);
+        service.body_context(context());
+        (service, root)
+    }
+    fn capture() -> observer::Capture {
+        observer::Capture {
+            content: observer::Content::Text("controlled visible fixture text".into()),
+            app: "Fixture".into(),
+            title: "Controlled window".into(),
+        }
+    }
+    fn wait(service: &Service, status: &str) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(6);
+        loop {
+            if service.background.list().iter().any(|t| t.status == status) {
+                return;
+            }
+            if std::time::Instant::now() >= deadline {
+                let last = service.background.list();
+                service.shutdown();
+                panic!("did not reach {status}: {last:?}");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+    #[test]
+    fn automatic_observation_never_captures_without_current_visible_context() {
+        let (service, root) = fixture("pre-capture", "restricted-hang");
+        for c in [
+            behavior::Context::default(),
+            behavior::Context {
+                ambient: false,
+                ..context()
+            },
+            behavior::Context {
+                unlocked: false,
+                ..context()
+            },
+            behavior::Context { at: 1, ..context() },
+        ] {
+            service.body_context(c);
+            service
+                .look_with(false, None, |_| panic!("capture must not run"))
+                .unwrap();
+        }
+        assert!(service.runtime.lock().unwrap().looks.is_empty());
+        assert!(service.background.list().is_empty());
+        service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn even_a_brief_pause_during_capture_revokes_content_before_model_launch() {
+        let (service, root) = fixture("capture-race", "restricted-hang");
+        service
+            .look_with(false, None, |_| {
+                service.body_context(behavior::Context {
+                    ambient: false,
+                    ..context()
+                });
+                assert!(service
+                    .look_with(true, None, |_| panic!("capture still has an owner"))
+                    .is_err());
+                service.body_context(context());
+                Ok(capture())
+            })
+            .unwrap();
+        assert!(service.background.list().is_empty());
+        assert!(service.runtime.lock().unwrap().preparing.is_none());
+        assert!(service.runtime.lock().unwrap().looks.is_empty());
+        assert!(!std::fs::read_to_string(root.join("data.json"))
+            .unwrap()
+            .contains("controlled visible fixture text"));
+        service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn hiding_or_opening_a_panel_cancels_the_owned_automatic_worker() {
+        let (service, root) = fixture("active-cancel", "restricted-hang");
+        service.look_with(false, None, |_| Ok(capture())).unwrap();
+        service.body_context(behavior::Context {
+            ambient: false,
+            ..context()
+        });
+        wait(&service, "cancelled");
+        service.finish_jobs().unwrap();
+        let r = service.runtime.lock().unwrap();
+        assert!(r.job.is_none());
+        assert!(r.pending_ambient.is_none());
+        assert!(r.error.is_empty());
+        drop(r);
+        assert_eq!(std::fs::read_dir(root.join("work")).unwrap().count(), 0);
+        service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn explicit_look_works_with_panel_open_and_only_explicit_screen_pause_cancels_it() {
+        let (service, root) = fixture("manual-look", "restricted-hang");
+        service.body_context(behavior::Context {
+            ambient: false,
+            ..context()
+        });
+        service.look_with(true, None, |_| Ok(capture())).unwrap();
+        service.body_context(behavior::Context {
+            ambient: false,
+            ..context()
+        });
+        let r = service.runtime.lock().unwrap();
+        assert!(r.job.as_ref().unwrap().valid(r.epoch, false));
+        drop(r);
+        service
+            .apply("screen:pause", json!({"minutes":60}))
+            .unwrap();
+        wait(&service, "cancelled");
+        service.finish_jobs().unwrap();
+        service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn explicit_reflection_survives_background_pause_and_its_result_is_consumed() {
+        let (service, root) = fixture("manual-reflect", "restricted-reflect");
+        service.apply("growth:reflect", json!({})).unwrap();
+        assert_eq!(service.snapshot()["observer"]["running"], false);
+        service.body_context(behavior::Context {
+            ambient: false,
+            ..context()
+        });
+        service
+            .apply("screen:pause", json!({"minutes":60}))
+            .unwrap();
+        wait(&service, "completed");
+        service.finish_jobs().unwrap();
+        assert!(service.data.snapshot()["growth"]["notes"]
+            .to_string()
+            .contains("整理了受控笔记"));
+        assert_eq!(
+            service.data.snapshot()["backgroundTasks"][0]["kind"],
+            "reflect"
+        );
+        service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn starting_focus_revokes_active_auto_work_and_preserves_the_opt_out() {
+        let (service, root) = fixture("focus", "restricted-hang");
+        service.look_with(false, None, |_| Ok(capture())).unwrap();
+        service
+            .apply("pomodoro:start", json!({"minutes":25}))
+            .unwrap();
+        wait(&service, "cancelled");
+        service.finish_jobs().unwrap();
+        service.runtime.lock().unwrap().last_look = 0;
+        service
+            .look_with(false, None, |_| panic!("focus must block capture"))
+            .unwrap();
+        let d = service.data.snapshot();
+        assert_eq!(
+            ambient_reason(&d, context(), companion::now()),
+            Some("focus")
+        );
+        service
+            .apply("settings:set", json!({"focusGuard":false}))
+            .unwrap();
+        assert_eq!(
+            ambient_reason(&service.data.snapshot(), context(), companion::now()),
+            None
+        );
+        service.look_with(false, None, |_| Ok(capture())).unwrap();
+        assert_eq!(service.background.list().len(), 2);
+        service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn old_ambient_captions_do_not_reappear_after_pause_and_resume() {
+        let (service, root) = fixture("old-caption", "restricted-hang");
+        {
+            let mut r = service.runtime.lock().unwrap();
+            r.pending_ambient = Some(("old".into(), r.epoch, companion::now() + 120000));
+        }
+        service.body_context(behavior::Context {
+            ambient: false,
+            ..context()
+        });
+        service.body_context(context());
+        assert!(service.runtime.lock().unwrap().pending_ambient.is_none());
+        service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn a_regular_task_started_during_capture_prevents_model_launch() {
+        let (mut service, root) = fixture("task-race", "restricted-hang");
+        service.tasks = TaskManager::fixture("hang");
+        service
+            .look_with(false, None, |_| {
+                service
+                    .tasks
+                    .start(service.user_request("controlled fixture task".into(), String::new()))
+                    .unwrap();
+                Ok(capture())
+            })
+            .unwrap();
+        assert!(service.background.list().is_empty());
+        assert!(service.runtime.lock().unwrap().looks.is_empty());
+        assert_eq!(service.snapshot()["observer"]["pauseReason"], "task");
+        service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn suspension_transitions_publish_passive_state_without_speech_or_repeated_updates() {
+        let (mut service, root) = fixture("passive-status", "restricted-hang");
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let capture = events.clone();
+        service.emit = Arc::new(move |name, value| {
+            capture.lock().unwrap().push((name.to_owned(), value));
+        });
+        let hidden = behavior::Context {
+            ambient: false,
+            ..context()
+        };
+        service.body_context(hidden);
+        service.body_context(hidden);
+        service.body_context(context());
+        let events = events.lock().unwrap();
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().all(|(name, _)| name == "companion:update"));
+        assert_eq!(events[0].1["observer"]["pauseReason"], "desktop");
+        assert!(events[1].1["observer"]["pauseReason"].is_null());
+        drop(events);
+        service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
 mod clipboard_tests {
     use super::*;
     fn fixture(name: &str) -> (Service, PathBuf) {
@@ -1480,6 +1883,7 @@ mod clipboard_tests {
         behavior::Context {
             at: companion::now(),
             unlocked: true,
+            ambient: true,
             free: true,
             may_sleep: true,
         }
@@ -1587,6 +1991,7 @@ mod behavior_tests {
             free: true,
             may_sleep: true,
             unlocked: true,
+            ambient: true,
         }
     }
     fn arm(service: &Service) {
@@ -1649,7 +2054,12 @@ mod behavior_tests {
                         r.pending_ambient =
                             Some(("等你有空".into(), r.epoch, companion::now() + 30_000))
                     }
-                    3 => r.preparing = true,
+                    3 => {
+                        r.preparing = Some(Preparation {
+                            epoch: r.epoch,
+                            manual: false,
+                        })
+                    }
                     4 => {
                         r.job = Some(Job {
                             id: 1,

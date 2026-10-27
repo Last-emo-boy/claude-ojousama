@@ -1415,6 +1415,7 @@ fn start_motion(
                     .body_context(behavior::Context {
                         at: companion::now(),
                         unlocked: session_unlocked,
+                        ambient: visible && !hidden_for_fullscreen && !panel_open,
                         free: visible
                             && grounded
                             && !snapshot.paused

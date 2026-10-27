@@ -241,6 +241,15 @@ impl TaskManager {
             .map(|r| r.view.clone())
             .collect()
     }
+    #[cfg(test)]
+    pub(crate) fn fixture(scenario: &str) -> Self {
+        let mut manager = Self::ephemeral(Arc::new(|_| {}));
+        manager.launch_override = Some(Launch {
+            executable: tests::fixture(),
+            args: vec![scenario.into()],
+        });
+        manager
+    }
 
     pub fn start(&self, mut request: StartRequest) -> Result<TaskView, String> {
         if request.restricted {

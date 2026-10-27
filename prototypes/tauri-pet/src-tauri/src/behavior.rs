@@ -7,6 +7,7 @@ pub struct Context {
     pub free: bool,
     pub may_sleep: bool,
     pub unlocked: bool,
+    pub ambient: bool,
 }
 impl Context {
     pub fn fresh(self, now: u64) -> bool {
@@ -209,6 +210,7 @@ mod tests {
             free: true,
             may_sleep: true,
             unlocked: true,
+            ambient: true,
         }
     }
     #[test]
