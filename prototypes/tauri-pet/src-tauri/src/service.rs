@@ -1,5 +1,6 @@
 use crate::{
     accessibility::Target,
+    alerts,
     backend::{StartRequest, TaskManager, TaskView},
     companion::{self, Companion},
     growth, observer, utilities,
@@ -28,6 +29,31 @@ struct Job {
     epoch: u64,
     deadline: u64,
 }
+#[derive(Clone)]
+struct AlertDelivery {
+    id: Value,
+    token: u64,
+    until: u64,
+    shown: bool,
+}
+fn alert_notice(delivery: &AlertDelivery, alert: &Value) -> Value {
+    let repeats = alert["count"]
+        .as_u64()
+        .unwrap_or(0)
+        .saturating_sub(u64::from(delivery.shown));
+    let label = match alert["kind"].as_str().unwrap_or("") {
+        "todo-overdue" => "待办到期",
+        "pomodoro" => "专注结束",
+        _ => {
+            if repeats > 0 {
+                "再提醒一次"
+            } else {
+                "提醒"
+            }
+        }
+    };
+    json!({"id":delivery.id,"token":delivery.token,"until":delivery.until,"label":label,"text":alert["text"],"buttons":alerts::buttons(alert)})
+}
 #[derive(Default)]
 struct Runtime {
     epoch: u64,
@@ -45,6 +71,9 @@ struct Runtime {
     pending_ambient: Option<(String, u64, u64)>,
     perch: Option<(Target, u64)>,
     capture_target: Option<Target>,
+    alert: Option<AlertDelivery>,
+    alert_attempt_after: u64,
+    alert_token: u64,
 }
 impl Service {
     pub fn new(
@@ -69,7 +98,19 @@ impl Service {
         let r = self.runtime.lock().unwrap();
         let data = self.data.snapshot();
         let capabilities = observer::capabilities(&data["observation"]);
-        json!({"data":data,"chatTask":r.chat,"observer":{"status":r.status,"error":r.error,"running":r.job.is_some(),"permission":observer::permission(),"capabilities":capabilities}})
+        let alert = r
+            .alert
+            .as_ref()
+            .filter(|a| a.until > companion::now())
+            .and_then(|delivery| {
+                data["alerts"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|a| companion::id(&a["id"]) == companion::id(&delivery.id))
+                    .map(|a| alert_notice(delivery, a))
+            });
+        json!({"data":data,"alert":alert,"chatTask":r.chat,"observer":{"status":r.status,"error":r.error,"running":r.job.is_some(),"permission":observer::permission(),"capabilities":capabilities}})
     }
     pub fn changed(&self) {
         (self.emit)("companion:update", self.snapshot());
@@ -307,8 +348,93 @@ impl Service {
         } else {
             self.data.apply(command, args)?
         };
+        self.clear_stale_alert();
         self.changed();
         Ok(result)
+    }
+    fn clear_stale_alert(&self) {
+        let d = self.data.snapshot();
+        let mut r = self.runtime.lock().unwrap();
+        if r.alert.as_ref().is_some_and(|a| {
+            !d["alerts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|v| companion::id(&v["id"]) == companion::id(&a.id))
+        }) {
+            let removed = r.alert.take().unwrap();
+            r.alert_attempt_after = companion::now() + 600;
+            drop(r);
+            (self.emit)(
+                "companion:alert",
+                json!({"clear":removed.id,"token":removed.token}),
+            );
+        }
+    }
+    pub fn alert_shown(&self, token: u64) -> Result<bool, String> {
+        let mut r = self.runtime.lock().unwrap();
+        let now = companion::now();
+        if r.stopping {
+            return Ok(false);
+        }
+        let Some(delivery) = r
+            .alert
+            .as_ref()
+            .filter(|a| a.token == token && a.until > now)
+            .cloned()
+        else {
+            return Ok(false);
+        };
+        if delivery.shown {
+            return Ok(true);
+        }
+        let shown = self
+            .data
+            .change(|d| Ok(alerts::shown(d, &delivery.id, now, delivery.until)))?;
+        if shown {
+            r.alert.as_mut().unwrap().shown = true;
+        }
+        drop(r);
+        if shown {
+            self.changed();
+        }
+        Ok(shown)
+    }
+    fn deliver_alerts(&self, present: bool) -> bool {
+        self.clear_stale_alert();
+        let now = companion::now();
+        let mut r = self.runtime.lock().unwrap();
+        if r.stopping {
+            return false;
+        }
+        if let Some(delivery) = &r.alert {
+            if delivery.until > now {
+                return true;
+            }
+            let old = r.alert.take().unwrap();
+            r.alert_attempt_after = now + 20_000;
+            drop(r);
+            (self.emit)("companion:alert", json!({"clear":old.id,"token":old.token}));
+            return false;
+        }
+        if !present || now < r.alert_attempt_after {
+            return false;
+        }
+        let Some(alert) = alerts::due(&self.data.snapshot(), now) else {
+            return false;
+        };
+        r.alert_token = r.alert_token.max(now) + 1;
+        let delivery = AlertDelivery {
+            id: alert["id"].clone(),
+            token: r.alert_token,
+            until: now + 30_000,
+            shown: false,
+        };
+        let notice = alert_notice(&delivery, &alert);
+        r.alert = Some(delivery);
+        drop(r);
+        (self.emit)("companion:alert", notice);
+        true
     }
     /// A perch arrival queues one eligible foreground look, never starts work on the motion thread.
     pub fn perch_changed(&self, target: Option<Target>) {
@@ -569,13 +695,20 @@ impl Service {
     }
     pub fn tick(&self) -> Result<(), String> {
         self.finish_jobs()?;
-        self.reminders()?;
+        self.refresh_alerts()?;
         let d = self.data.snapshot();
+        let busy = self.tasks.list().iter().any(|t| !done(t));
+        let present = !companion::quiet_hours(&d)
+            && !busy
+            && observer::unlocked()
+            && observer::idle_seconds() < 120.0;
+        if self.deliver_alerts(present) {
+            return Ok(());
+        }
         self.deliver_ambient(&d);
         if companion::quiet_hours(&d) {
             return Ok(());
         }
-        let busy = self.tasks.list().iter().any(|t| !done(t));
         if !busy {
             if d["settings"]["rules"]["goals"] == "auto" {
                 if let Some(g) = d["goals"].as_array().unwrap().iter().find(|g| {
@@ -941,45 +1074,23 @@ impl Service {
         );
         Ok(())
     }
-    fn reminders(&self) -> Result<(), String> {
+    fn refresh_alerts(&self) -> Result<(), String> {
         let now = companion::now();
-        let d = self.data.snapshot();
-        let due = d["reminders"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|r| r["at"].as_u64().is_some_and(|t| t <= now) && r["fired"] != true);
-        let pomo = d["pomodoro"]["until"]
-            .as_u64()
-            .is_some_and(|t| t > 0 && t <= now);
-        if !due && !pomo {
+        let mut preview = self.data.snapshot();
+        if !alerts::reconcile(&mut preview, now) {
             return Ok(());
         }
-        let messages = self.data.change(|d| {
-            let mut messages = Vec::new();
-            for r in d["reminders"].as_array_mut().unwrap() {
-                if r["at"].as_u64().is_some_and(|t| t <= now) && r["fired"] != true {
-                    messages.push(r["text"].as_str().unwrap_or("提醒到时间了").to_string());
-                    if r["repeat"] == "daily" {
-                        r["at"] = json!(now + 86_400_000);
-                    } else {
-                        r["fired"] = json!(true);
-                    }
-                }
-            }
+        self.data.change(|d| {
+            let pomo = d["pomodoro"]["until"]
+                .as_u64()
+                .is_some_and(|at| at > 0 && at <= now);
+            alerts::reconcile(d, now);
             if pomo {
-                d["pomodoro"]["until"] = json!(0);
-                messages.push("专注时间结束，伸个懒腰吧。".into());
                 gain_xp(d, 5);
             }
-            for line in &messages {
-                companion::log(d, "reminder", line);
-            }
-            Ok(messages)
+            Ok(())
         })?;
-        if let Some(line) = messages.first() {
-            self.say(line, "wave");
-        }
+        self.clear_stale_alert();
         self.changed();
         Ok(())
     }
@@ -991,6 +1102,7 @@ impl Service {
             runtime.pending_ambient = None;
             runtime.perch = None;
             runtime.capture_target = None;
+            runtime.alert = None;
         }
         self.background.shutdown();
     }
@@ -1142,6 +1254,134 @@ mod shutdown_tests {
             .apply("chat:send", json!({"text":"hello"}))
             .unwrap_err()
             .contains("退出"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod alert_tests {
+    use super::*;
+    fn fixture(name: &str) -> (Service, PathBuf) {
+        let root = std::env::temp_dir().join(format!("ojousama-alert-{name}-{}", companion::now()));
+        std::fs::create_dir_all(&root).unwrap();
+        let data = Companion::open(root.join("pet-data.json"), None).unwrap();
+        let service = Service::new(
+            data,
+            TaskManager::ephemeral(Arc::new(|_| {})),
+            root.join("work"),
+            root.join("documents"),
+            Arc::new(|_, _| {}),
+        )
+        .unwrap();
+        service
+            .data
+            .change(|d| {
+                d["reminders"] =
+                    json!([{"id":"legacy","text":"测试提醒","at":companion::now()-1000}]);
+                Ok(())
+            })
+            .unwrap();
+        service.refresh_alerts().unwrap();
+        (service, root)
+    }
+    #[test]
+    fn only_a_visible_delivery_receipt_counts_and_is_idempotent() {
+        let (service, root) = fixture("shown");
+        assert!(!service.deliver_alerts(false));
+        assert!(service.deliver_alerts(true));
+        assert_eq!(service.data.snapshot()["alerts"][0]["count"], 0);
+        let token = service
+            .runtime
+            .lock()
+            .unwrap()
+            .alert
+            .as_ref()
+            .unwrap()
+            .token;
+        assert!(!service.alert_shown(token - 1).unwrap());
+        assert!(service.alert_shown(token).unwrap());
+        assert!(service.alert_shown(token).unwrap());
+        assert_eq!(service.data.snapshot()["alerts"][0]["count"], 1);
+        assert_eq!(service.snapshot()["alert"]["label"], "提醒");
+        let id = service.data.snapshot()["alerts"][0]["id"].clone();
+        service
+            .apply("alert:respond", json!({"id":id,"choice":"ok"}))
+            .unwrap();
+        assert!(service.runtime.lock().unwrap().alert.is_none());
+        assert!(!service.alert_shown(token).unwrap());
+        service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn expired_unseen_delivery_retries_without_consuming_a_nag() {
+        let (service, root) = fixture("expiry");
+        assert!(service.deliver_alerts(true));
+        let token = service
+            .runtime
+            .lock()
+            .unwrap()
+            .alert
+            .as_ref()
+            .unwrap()
+            .token;
+        service
+            .runtime
+            .lock()
+            .unwrap()
+            .alert
+            .as_mut()
+            .unwrap()
+            .until = companion::now() - 1;
+        assert!(!service.deliver_alerts(true));
+        assert_eq!(service.data.snapshot()["alerts"][0]["count"], 0);
+        service.runtime.lock().unwrap().alert_attempt_after = 0;
+        assert!(service.deliver_alerts(true));
+        let new = service
+            .runtime
+            .lock()
+            .unwrap()
+            .alert
+            .as_ref()
+            .unwrap()
+            .token;
+        assert!(new > token);
+        assert!(!service.alert_shown(token).unwrap());
+        assert!(service.alert_shown(new).unwrap());
+        service.shutdown();
+        assert!(!service.deliver_alerts(true));
+        assert!(!service.alert_shown(new).unwrap());
+        let saved = Companion::open(root.join("pet-data.json"), None).unwrap();
+        assert_eq!(saved.snapshot()["alerts"][0]["count"], 1);
+        assert_eq!(saved.snapshot()["reminders"][0]["fired"], true);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn changing_a_due_date_removes_the_old_delivery_and_resets_warning_flags() {
+        let (service, root) = fixture("reschedule");
+        service.data.change(|d|{d["reminders"]=json!([]);d["todos"]=json!([{"id":"old-todo","text":"修改截止时间","due":companion::now()-1000,"done":false}]);Ok(())}).unwrap();
+        service.refresh_alerts().unwrap();
+        assert!(service.deliver_alerts(true));
+        let token = service
+            .runtime
+            .lock()
+            .unwrap()
+            .alert
+            .as_ref()
+            .unwrap()
+            .token;
+        service
+            .apply(
+                "todo:update",
+                json!({"id":"old-todo","patch":{"due":companion::now()+3_600_000}}),
+            )
+            .unwrap();
+        assert!(service.runtime.lock().unwrap().alert.is_none());
+        assert!(!service.alert_shown(token).unwrap());
+        let d = service.data.snapshot();
+        assert!(d["alerts"].as_array().unwrap().is_empty());
+        assert_eq!(d["todos"][0]["warned"], false);
+        assert_eq!(d["todos"][0]["overdue"], false);
+        service.shutdown();
         std::fs::remove_dir_all(root).unwrap();
     }
 }

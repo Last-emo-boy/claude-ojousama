@@ -22,6 +22,8 @@ const state = {
 let companionPanel
 let companionBubble = null
 const bubbles = createBubbleState()
+let alertControlsKey = ''
+let shownAlertToken = null
 let bubbleTimer
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)')
 const invoke = (command, args) => window.__TAURI__.core.invoke(command, args)
@@ -95,6 +97,7 @@ function mountPet() {
       <p id="pet-message" class="pet-message"></p>
       <p id="pet-error" class="pet-error" role="alert"></p>
       <div class="pet-actions">
+        <div id="pet-alert-actions" class="pet-alert-actions" hidden></div>
         <button id="pet-stop" class="danger hidden" type="button">停止</button>
         <button id="pet-open" type="button">新任务</button>
       </div>
@@ -108,7 +111,7 @@ function mountPet() {
   spriteContext = canvas.getContext('2d')
   spriteContext.setTransform(ratio, 0, 0, ratio, 0, 0)
   spriteContext.imageSmoothingEnabled = false
-  $('pet-open').addEventListener('click', event => action(event.currentTarget, () => invoke('show_panel')))
+  $('pet-open').addEventListener('click', event => action(event.currentTarget, () => invoke('show_panel', bubbles.read()?.source==='alert'?{tab:'todos'}:{})))
   $('pet-dismiss').addEventListener('click', () => { bubbles.dismiss(); renderPet() })
   const menu = visible => { $('pet-menu').hidden = !visible; canvas.setAttribute('aria-expanded', String(visible)); renderPet() }
   $('pet-menu-chat').addEventListener('click', () => { menu(false); invoke('show_panel').catch(showError) })
@@ -186,7 +189,8 @@ function mountPet() {
   })
   document.addEventListener('visibilitychange', () => {
     clearTimeout(animationTimer)
-    if (!document.hidden) drawSprite()
+    shownAlertToken = null
+    if (!document.hidden) { drawSprite(); renderPet() }
   })
 }
 
@@ -263,6 +267,7 @@ function spriteAnimation() {
   const task = currentTask(state.tasks)
   const base = presentation(task, state.motion.paused&&isActive(task)?'settled':state.motion.phase)
   if (['dragging','flying','walking','climbing','hoisting','descending'].includes(state.motion.phase) || base.active) return base.animation
+  if (bubbles.read()?.source === 'alert') return 'wave'
   if (companionBubble?.until > Date.now()) return companionBubble.animation || 'idle'
   if (state.motion.phase === 'perched') return 'sit'
   return bubbles.read()?.source === 'task' ? base.animation : 'idle'
@@ -285,6 +290,28 @@ function sendHitRegions() {
   })
 }
 
+function renderAlertActions(notice, visible) {
+  const box=$('pet-alert-actions')
+  box.hidden=notice?.source!=='alert'
+  if(box.hidden)return
+  if(alertControlsKey!==String(notice.token)) {
+    alertControlsKey=String(notice.token)
+    box.replaceChildren(...notice.buttons.map(choice=>{
+      const button=element('button',choice.id==='done'||choice.id==='ok'?'primary':'',choice.label)
+      button.type='button'
+      button.addEventListener('click',event=>action(event.currentTarget,async()=>{
+        await invoke('companion_command',{command:'alert:respond',args:{id:notice.alertId,choice:choice.id}})
+        bubbles.clearAlert(notice.alertId);renderPet()
+      }))
+      return button
+    }))
+  }
+  if(visible && !document.hidden && shownAlertToken!==notice.token) {
+    shownAlertToken=notice.token
+    invoke('alert_shown',{token:notice.token}).then(shown=>{if(!shown && shownAlertToken===notice.token)shownAlertToken=null}).catch(error=>{if(shownAlertToken===notice.token)shownAlertToken=null;showError(error)})
+  }
+}
+
 function renderPet() {
   clearTimeout(bubbleTimer)
   const task = currentTask(state.tasks)
@@ -299,7 +326,8 @@ function renderPet() {
   $('pet-error').textContent = notice?.source === 'error' ? notice.text : ''
   $('pet-bubble').classList.toggle('has-error', notice?.source === 'error')
   $('pet-stop').classList.toggle('hidden', !notice?.active)
-  $('pet-open').textContent = notice?.source === 'task' ? '查看任务' : '聊两句'
+  $('pet-open').textContent = notice?.source === 'alert' ? '全部提醒' : notice?.source === 'task' ? '查看任务' : '聊两句'
+  renderAlertActions(notice,!$('pet-bubble').hidden)
   $('pet-perch').textContent = state.motion.phase === 'perched' ? '下来' : '爬上窗口'
   $('pet-perch').classList.toggle('hidden', !state.positionable)
   $('pet-menu-walk').classList.toggle('hidden',!state.positionable)
@@ -575,6 +603,7 @@ async function boot() {
   if (!window.__TAURI__) throw new Error('请从 Claude Ojousama 应用打开这个界面')
   await window.__TAURI__.event.listen('task:update', event => acceptTask(event.payload))
   if (view === 'pet') {
+    await window.__TAURI__.event.listen('companion:alert',event=>{bubbles.alert(event.payload);renderPet()})
     await window.__TAURI__.event.listen('pet:error', event => showError(event.payload))
   await window.__TAURI__.event.listen('motion:update', event => {
       if((event.payload.generation||0)<(state.motion.generation||0))return
@@ -592,7 +621,7 @@ async function boot() {
   state.positionable = initial.positionable !== false
   state.platform = initial.platform
   state.motion = initial.motion || state.motion
-  if (view === 'pet') bubbles.task(currentTask(state.tasks), { snapshot: true })
+  if (view === 'pet') {bubbles.task(currentTask(state.tasks), { snapshot: true });bubbles.alert(initial.companion?.alert)}
   if (view === 'panel' && initial.companion) {
     companionPanel = mountCompanion({invoke, initial: initial.companion, showError, platform:state.platform, onTasks: () => companionPanel.select('tasks')})
     await window.__TAURI__.event.listen('companion:update', event => companionPanel.update(event.payload))

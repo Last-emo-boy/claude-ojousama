@@ -2050,6 +2050,431 @@
           ]
         }
       ]
+    },
+    {
+      "type": "frame",
+      "id": "TQ95F",
+      "x": 920,
+      "y": 780,
+      "name": "04 · 提醒与待办",
+      "clip": true,
+      "width": 1000,
+      "height": 580,
+      "fill": "$paper",
+      "cornerRadius": 16,
+      "layout": "vertical",
+      "gap": 24,
+      "padding": 30,
+      "children": [
+        {
+          "type": "text",
+          "id": "dUFGd",
+          "name": "提醒标题",
+          "fill": "$ink",
+          "content": "提醒一下，然后等你。",
+          "fontFamily": "Noto Sans SC",
+          "fontSize": 26,
+          "fontWeight": "normal"
+        },
+        {
+          "type": "frame",
+          "id": "rgnjS",
+          "name": "气泡与待办联动",
+          "width": "fill_container",
+          "height": "fill_container",
+          "gap": 30,
+          "children": [
+            {
+              "type": "frame",
+              "id": "HpNpJ",
+              "name": "桌面提醒",
+              "width": 340,
+              "height": "fill_container",
+              "fill": "#EDE7DB",
+              "cornerRadius": 14,
+              "layout": "vertical",
+              "gap": 18,
+              "padding": 20,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "bzBcA",
+                  "name": "桌面状态",
+                  "fill": "$muted",
+                  "content": "到时间时，轻轻提醒。",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "h8by8",
+                  "name": "可回应的提醒气泡",
+                  "width": "fill_container",
+                  "fill": "$paper",
+                  "cornerRadius": 14,
+                  "layout": "vertical",
+                  "gap": 10,
+                  "padding": 14,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "X3Lss",
+                      "name": "气泡标题栏",
+                      "width": "fill_container",
+                      "justifyContent": "space_between",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "qKrjf",
+                          "name": "提醒状态",
+                          "fill": "$accent",
+                          "content": "提醒",
+                          "fontFamily": "Noto Sans SC",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "text",
+                          "id": "D9Q8T",
+                          "name": "收起气泡",
+                          "fill": "$muted",
+                          "content": "×",
+                          "fontFamily": "Noto Sans SC",
+                          "fontSize": 18,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "IJXa6",
+                      "name": "提醒内容",
+                      "fill": "$ink",
+                      "content": "专注结束，伸个懒腰吧。",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 15,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "xFYwu",
+                      "name": "气泡回应",
+                      "width": "fill_container",
+                      "gap": 7,
+                      "justifyContent": "end",
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "E653bb",
+                          "name": "知道了 按钮",
+                          "fill": "$accent",
+                          "cornerRadius": 7,
+                          "padding": 8,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "vI1SS",
+                              "name": "知道了",
+                              "fill": "#FFFFFF",
+                              "content": "知道了",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "TUaFu",
+                          "name": "10 分钟后 按钮",
+                          "fill": "#FFFFFF",
+                          "cornerRadius": 7,
+                          "padding": 8,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "Kfl8h",
+                              "name": "10 分钟后",
+                              "fill": "$ink",
+                              "content": "10 分钟后",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "jfBhQ",
+                          "name": "全部提醒 按钮",
+                          "fill": "#FFFFFF",
+                          "cornerRadius": 7,
+                          "padding": 8,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "dy1qh",
+                              "name": "全部提醒",
+                              "fill": "$ink",
+                              "content": "全部提醒",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "QPeyR",
+                  "name": "提醒时的大小姐",
+                  "clip": true,
+                  "width": 84,
+                  "height": 110,
+                  "layout": "none",
+                  "children": [
+                    {
+                      "type": "rectangle",
+                      "id": "klmv1",
+                      "x": 0,
+                      "y": 0,
+                      "name": "01  安静陪伴 角色 图像",
+                      "fill": {
+                        "type": "image",
+                        "enabled": true,
+                        "url": "../assets/sprites/idle.png",
+                        "mode": "stretch"
+                      },
+                      "width": 336,
+                      "height": 110
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "K5cr2",
+                  "name": "收起行为",
+                  "fill": "$muted",
+                  "content": "气泡收起，事情仍留在待办。",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "JEyDr",
+              "name": "待办中的提醒收件箱",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "gap": 20,
+              "padding": 8,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "GtIxQ",
+                  "name": "待处理标题",
+                  "fill": "$ink",
+                  "content": "待处理提醒 · 2",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 21,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "aQIKE",
+                  "name": "交项目周报 提醒",
+                  "width": "fill_container",
+                  "fill": "#F3EEE6",
+                  "cornerRadius": 12,
+                  "layout": "vertical",
+                  "gap": 9,
+                  "padding": 16,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "Wi1Jn",
+                      "name": "交项目周报 内容",
+                      "fill": "$ink",
+                      "content": "交项目周报",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 16,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "I20Mw",
+                      "name": "交项目周报 状态",
+                      "fill": "$muted",
+                      "content": "已提醒 3 次 · 仍在这里等你",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "sHbdQ",
+                      "name": "交项目周报 操作",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "rxdoh",
+                          "name": "已完成 按钮",
+                          "fill": "$accent",
+                          "cornerRadius": 7,
+                          "padding": 8,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "m0M7LQ",
+                              "name": "已完成",
+                              "fill": "#FFFFFF",
+                              "content": "已完成",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "b1W7tf",
+                          "name": "推迟 1 小时 按钮",
+                          "fill": "#FFFFFF",
+                          "cornerRadius": 7,
+                          "padding": 8,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "Kru46",
+                              "name": "推迟 1 小时",
+                              "fill": "$ink",
+                              "content": "推迟 1 小时",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "u6oG5",
+                  "name": "喝点水 提醒",
+                  "width": "fill_container",
+                  "fill": "#F3EEE6",
+                  "cornerRadius": 12,
+                  "layout": "vertical",
+                  "gap": 9,
+                  "padding": 16,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "W9uir",
+                      "name": "喝点水 内容",
+                      "fill": "$ink",
+                      "content": "喝点水",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 16,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "text",
+                      "id": "Q9pHNL",
+                      "name": "喝点水 状态",
+                      "fill": "$muted",
+                      "content": "刚刚到期",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    },
+                    {
+                      "type": "frame",
+                      "id": "Jj05u",
+                      "name": "喝点水 操作",
+                      "gap": 8,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "stYdA",
+                          "name": "知道了 按钮",
+                          "fill": "$accent",
+                          "cornerRadius": 7,
+                          "padding": 8,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "IFV4M",
+                              "name": "知道了",
+                              "fill": "#FFFFFF",
+                              "content": "知道了",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "frame",
+                          "id": "jybkk",
+                          "name": "10 分钟后 按钮",
+                          "fill": "#FFFFFF",
+                          "cornerRadius": 7,
+                          "padding": 8,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "C7f03",
+                              "name": "10 分钟后",
+                              "fill": "$ink",
+                              "content": "10 分钟后",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "W3PKOE",
+                  "name": "提醒频率说明",
+                  "fill": "$muted",
+                  "content": "最多弹出 3 次；之后留在这里。",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "mwynT",
+                  "name": "离开电脑的行为",
+                  "fill": "$muted",
+                  "content": "你不在电脑前时先记下，回来再提醒。",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ]
 }

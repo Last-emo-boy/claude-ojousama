@@ -122,7 +122,11 @@ impl Companion {
         Ok(result)
     }
     pub fn apply(&self, command: &str, args: Value) -> Result<Value, String> {
-        self.change(|d| apply(d, command, args))
+        self.change(|d| {
+            let result = apply(d, command, args)?;
+            crate::alerts::prune(d);
+            Ok(result)
+        })
     }
 }
 pub fn log(d: &mut Value, kind: &str, text: &str) {
@@ -141,7 +145,7 @@ fn text(v: &Value, key: &str) -> Result<String, String> {
         Ok(t.into())
     }
 }
-fn id(v: &Value) -> String {
+pub(crate) fn id(v: &Value) -> String {
     v.as_str()
         .map(String::from)
         .unwrap_or_else(|| v.to_string())
@@ -196,7 +200,7 @@ pub fn quiet_hours(d: &Value) -> bool {
         t >= a && t < b
     }
 }
-fn apply(d: &mut Value, command: &str, args: Value) -> Result<Value, String> {
+pub(crate) fn apply(d: &mut Value, command: &str, args: Value) -> Result<Value, String> {
     match command {
         "todo:add" | "reminder:add" | "memory:add" | "goal:add" => {
             let key = match command {
@@ -244,6 +248,14 @@ fn apply(d: &mut Value, command: &str, args: Value) -> Result<Value, String> {
             } else {
                 &["title", "detail", "status", "every", "at"][..]
             };
+            if key == "todos"
+                && args["patch"]
+                    .get("due")
+                    .is_some_and(|due| due != &item["due"])
+            {
+                item["warned"] = json!(false);
+                item["overdue"] = json!(false);
+            }
             for field in fields {
                 if let Some(v) = args["patch"].get(field) {
                     item[*field] = v.clone();
@@ -315,6 +327,7 @@ fn apply(d: &mut Value, command: &str, args: Value) -> Result<Value, String> {
                 json!(now() + args["minutes"].as_u64().unwrap_or(60).min(1440) * 60_000);
             Ok(Value::Null)
         }
+        "alert:respond" => crate::alerts::respond(d, &args, now()),
         "alert:ack" => {
             rows(d, "alerts")?.retain(|x| id(&x["id"]) != id(&args["id"]));
             Ok(Value::Null)

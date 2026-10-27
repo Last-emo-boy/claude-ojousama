@@ -62,3 +62,38 @@ test('closing the visible bubble does not reveal an older notice underneath it',
   state.dismiss()
   assert.equal(state.read(201), null)
 })
+
+
+test('actionable reminders expire, outrank casual speech, but yield to a task approval', () => {
+  const state=createBubbleState()
+  state.alert({id:'a',token:1,text:'休息一下',buttons:[{id:'ok',label:'知道了'}],until:30000},0)
+  state.speak({text:'随便说说',until:10000},0)
+  assert.equal(state.read(1).source,'alert')
+  assert.equal(state.read(1).buttons[0].id,'ok')
+  state.task(task('approval',{id:'decision'}),{now:2})
+  assert.equal(state.read(3).source,'task')
+  state.task(task('completed'),{now:1000})
+  assert.equal(state.read(1001).source,'alert')
+  assert.equal(state.read(30000),null)
+})
+test('a dismissed reminder is not reopened by the same delivery token', () => {
+  const state=createBubbleState()
+  const alert={id:'a',token:1,text:'提醒',until:30000}
+  state.alert(alert,0);state.dismiss();state.alert(alert,100)
+  assert.equal(state.read(101),null)
+  state.alert({...alert,token:2,until:40000},1000)
+  assert.equal(state.read(1001).source,'alert')
+  state.clearAlert('other');assert.equal(state.read(1002).source,'alert')
+  state.alert({clear:'a'},1003);assert.equal(state.read(1004),null)
+})
+
+test('an old clear event cannot dismiss a newer delivery and acknowledgement clears old chatter', () => {
+  const state=createBubbleState()
+  state.alert({id:'a',token:1,text:'提醒',until:30000},0)
+  state.alert({id:'a',token:2,text:'再提醒',until:30000},1)
+  state.alert({clear:'a',token:1},2)
+  assert.equal(state.read(3).token,2)
+  state.speak({text:'旧闲聊',until:10000},3)
+  state.clearAlert('a')
+  assert.equal(state.read(4),null)
+})

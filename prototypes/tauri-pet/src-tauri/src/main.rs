@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod accessibility;
+mod alerts;
 mod backend;
 mod companion;
 mod desktop;
@@ -383,7 +384,7 @@ async fn companion_command(
     if window.label() != "panel"
         && !matches!(
             command.as_str(),
-            "screen:pause" | "alert:ack" | "pomodoro:stop"
+            "screen:pause" | "alert:ack" | "alert:respond" | "pomodoro:stop"
         )
     {
         return Err("请从控制面板执行此操作".into());
@@ -418,6 +419,23 @@ async fn companion_command(
         *state.settings.lock().unwrap() = settings;
     }
     Ok(result)
+}
+#[tauri::command]
+async fn alert_shown(
+    window: WebviewWindow,
+    state: tauri::State<'_, State>,
+    token: u64,
+) -> Result<bool, String> {
+    if window.label() != "pet" {
+        return Err("仅桌宠可确认提醒已显示".into());
+    }
+    if !window.is_visible().map_err(|e| e.to_string())? {
+        return Ok(false);
+    }
+    let service = state.service.clone();
+    tauri::async_runtime::spawn_blocking(move || service.alert_shown(token))
+        .await
+        .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 async fn observer_windows(
@@ -1417,6 +1435,7 @@ fn main() {
             motion_command,
             motion_status,
             companion_command,
+            alert_shown,
             observer_windows,
             observer_status,
             observer_permission,
