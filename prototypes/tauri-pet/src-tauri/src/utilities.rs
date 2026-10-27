@@ -323,9 +323,15 @@ mod tests {
     }
 }
 
-fn read_git(dir: &Path, args: &[String]) -> Result<(std::process::ExitStatus, Vec<u8>), String> {
-    let mut child = std::process::Command::new("git")
+fn read_git(
+    dir: &Path,
+    args: &[String],
+    overrides: &[(String, String)],
+) -> Result<(std::process::ExitStatus, Vec<u8>), String> {
+    let mut command = std::process::Command::new("git");
+    command
         .args([
+            "--no-pager",
             "-c",
             "core.fsmonitor=false",
             "-c",
@@ -335,11 +341,26 @@ fn read_git(dir: &Path, args: &[String]) -> Result<(std::process::ExitStatus, Ve
         .current_dir(dir)
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_TERMINAL_PROMPT", "0")
+        .env_remove("GIT_CONFIG_PARAMETERS")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map_err(|e| e.to_string())?;
+        .stderr(std::process::Stdio::null());
+    if !overrides.is_empty() {
+        // Keep keys and values separate: valid filter-driver names can contain '='.
+        let count = std::env::var("GIT_CONFIG_COUNT").unwrap_or_else(|_| "0".into());
+        let base = if count.is_empty() {
+            0
+        } else {
+            count.parse::<usize>().map_err(|_| "Git 临时配置格式错误")?
+        };
+        for (i, (key, value)) in overrides.iter().enumerate() {
+            command
+                .env(format!("GIT_CONFIG_KEY_{}", base + i), key)
+                .env(format!("GIT_CONFIG_VALUE_{}", base + i), value);
+        }
+        command.env("GIT_CONFIG_COUNT", (base + overrides.len()).to_string());
+    }
+    let mut child = command.spawn().map_err(|e| e.to_string())?;
     let stdout = child.stdout.take().unwrap();
     let reader = std::thread::spawn(move || {
         use std::io::Read;
@@ -402,7 +423,7 @@ pub fn workspace_pulse(cwd: &str) -> Result<String, String> {
             r"^filter\.",
         ]
         .map(String::from);
-        let (status, keys) = read_git(&dir, &args)?;
+        let (status, keys) = read_git(&dir, &args, &[])?;
         if !status.success() && status.code() != Some(1) {
             return Err("无法读取 Git 配置，未查询工作区状态".into());
         }
@@ -411,23 +432,36 @@ pub fn workspace_pulse(cwd: &str) -> Result<String, String> {
             .split('\0')
             .filter_map(|key| key.rsplit_once('.').map(|(driver, _)| driver))
             .collect();
-        let mut args = Vec::new();
+        if !drivers.is_empty() {
+            let args = ["--version".into()];
+            let (_, version) = read_git(&dir, &args, &[])?;
+            let text = String::from_utf8_lossy(&version);
+            let mut parts = text
+                .trim()
+                .strip_prefix("git version ")
+                .unwrap_or("")
+                .split('.');
+            let major = parts.next().and_then(|v| v.parse::<u32>().ok());
+            let minor = parts.next().and_then(|v| v.parse::<u32>().ok());
+            if !matches!((major,minor),(Some(a),Some(b)) if a>2 || (a==2&&b>=31)) {
+                return Err("含过滤器的工作区巡检需要 Git 2.31 或更新版本".into());
+            }
+        }
+        let mut overrides = Vec::new();
         for driver in &drivers {
             for key in ["clean", "smudge", "process"] {
-                args.extend(["-c".into(), format!("{driver}.{key}=")]);
+                overrides.push((format!("{driver}.{key}"), String::new()));
             }
-            args.extend(["-c".into(), format!("{driver}.required=false")]);
+            overrides.push((format!("{driver}.required"), "false".into()));
         }
-        args.extend(
-            [
-                "status",
-                "--porcelain=v1",
-                "--branch",
-                "--ignore-submodules=all",
-            ]
-            .map(String::from),
-        );
-        let (status, bytes) = read_git(&dir, &args)?;
+        let args = [
+            "status",
+            "--porcelain=v1",
+            "--branch",
+            "--ignore-submodules=all",
+        ]
+        .map(String::from);
+        let (status, bytes) = read_git(&dir, &args, &overrides)?;
         if !status.success() {
             continue;
         }
@@ -517,6 +551,14 @@ mod git_tests {
                 .trim(),
             "true"
         );
+        fs::write(root.join(".gitattributes"), "*.txt filter=fixture=odd\n").unwrap();
+        git(&["config", "filter.fixture=odd.clean", "sh filter.sh"]);
+        git(&["config", "filter.fixture=odd.process", "sh filter.sh"]);
+        git(&["config", "filter.fixture=odd.required", "true"]);
+        assert!(workspace_pulse(root.to_str().unwrap())
+            .unwrap()
+            .contains("file.txt"));
+        assert!(!root.join("filter-marker").exists());
         fs::remove_dir_all(root).unwrap();
     }
 }

@@ -16,9 +16,19 @@ const { Growth, cleanLine, dayStr } = require('./growth')
  * Run one fixed, read-only git command; '' on any failure. A repo's own config must not make it run
  * programs (core.fsmonitor), and it never takes the index lock while the user works.
  */
-function readGit(cwd, args, emptyConfig = false) {
-  const safe = ['-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false', '-c', 'log.showSignature=false', ...args]
+function readGit(cwd, args, emptyConfig = false, overrides = []) {
+  const safe = ['--no-pager', '-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false', '-c', 'log.showSignature=false', ...args]
   const env = { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' }
+  delete env.GIT_CONFIG_PARAMETERS
+  if (overrides.length) {
+    // Driver names can contain '='; do not encode key/value pairs as -c strings.
+    const base = Number(env.GIT_CONFIG_COUNT || 0)
+    for (const [i, [key, value]] of overrides.entries()) {
+      env[`GIT_CONFIG_KEY_${base + i}`] = key
+      env[`GIT_CONFIG_VALUE_${base + i}`] = value
+    }
+    env.GIT_CONFIG_COUNT = String(base + overrides.length)
+  }
   return new Promise((resolve) => {
     execFile('git', safe, { cwd, env, timeout: 5000, windowsHide: true, maxBuffer: 1 << 20 }, (err, out) => resolve(err ? (emptyConfig && err.code === 1 ? '' : null) : String(out)))
   })
@@ -28,12 +38,17 @@ async function git(cwd, args) {
   const keys = await readGit(cwd, ['config', '--null', '--name-only', '--get-regexp', '^filter\\.'], true)
   if (keys === null) return ''
   const drivers = new Set(keys.split('\0').filter(Boolean).map((key) => key.slice(0, key.lastIndexOf('.'))))
+  if (drivers.size) {
+    const version = await readGit(cwd, ['--version'])
+    const parts = /^git version (\d+)\.(\d+)/.exec(version || '')
+    if (!parts || !(Number(parts[1]) > 2 || Number(parts[1]) === 2 && Number(parts[2]) >= 31)) throw new Error('含过滤器的工作区巡检需要 Git 2.31 或更新版本')
+  }
   const overrides = []
   for (const driver of drivers) {
-    for (const key of ['clean', 'smudge', 'process']) overrides.push('-c', `${driver}.${key}=`)
-    overrides.push('-c', `${driver}.required=false`)
+    for (const key of ['clean', 'smudge', 'process']) overrides.push([`${driver}.${key}`, ''])
+    overrides.push([`${driver}.required`, 'false'])
   }
-  const out = await readGit(cwd, [...overrides, ...args, '--ignore-submodules=all'])
+  const out = await readGit(cwd, [...args, '--ignore-submodules=all'], false, overrides)
   if (!out) return ''
   return drivers.size ? out.replace('\n', '（未运行仓库过滤器；需转换的文件状态可能与常规查询不同）\n') : out
 }

@@ -115,6 +115,13 @@ check('agenda rule off -> nothing', (() => {
     check('required process filter can stay disabled without losing status',process.includes('file.txt'),true)
     check('process filter is not launched',fs.existsSync(path.join(root,'filter-marker')),false)
     check('repository filter settings stay unchanged',git('config','filter.fixture.required').trim(),'true')
+    fs.writeFileSync(path.join(root,'.gitattributes'),'*.txt filter=fixture=odd\n')
+    git('config','filter.fixture=odd.clean','sh filter.sh')
+    git('config','filter.fixture=odd.process','sh filter.sh')
+    git('config','filter.fixture=odd.required','true')
+    const unusual = await repoStatus(root)
+    check('literal equals in driver names cannot escape overrides',fs.existsSync(path.join(root,'filter-marker')),false)
+    check('unusual driver still returns useful status',unusual.includes('file.txt'),true)
   } finally {
     fs.rmSync(root,{recursive:true,force:true})
   }
