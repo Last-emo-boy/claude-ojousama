@@ -2,6 +2,7 @@ import { isActive, orderedTasks, upsertTask, currentTask, selectedTask, presenta
 import { createDragQueue } from './drag.mjs'
 import { mountCompanion } from './companion.mjs'
 import { createBubbleState } from './bubble.mjs'
+import { spritePlayback } from './behavior.mjs'
 
 const app = document.querySelector('#app')
 const view = new URLSearchParams(location.search).get('view') === 'panel' ? 'panel' : 'pet'
@@ -80,6 +81,7 @@ function render() {
 
 let animationTimer
 let activeAnimation = ''
+let activeIntent = 0
 let animationFrame = 0
 let spriteBands = []
 let lastRegions = ''
@@ -102,7 +104,7 @@ function mountPet() {
         <button id="pet-open" type="button">新任务</button>
       </div>
     </section>
-    <div id="pet-menu" class="pet-menu" role="menu" aria-label="桌宠操作" hidden><button id="pet-menu-chat" type="button" role="menuitem">聊聊今天 ↗</button><button id="pet-perch" type="button" role="menuitem">爬上窗口</button><button id="pet-menu-walk" type="button" role="menuitem">去走走</button><button id="pet-menu-stop" type="button" role="menuitem">停步／下来</button><button id="pet-menu-actions" type="button" role="menuitem">选个动作</button><button id="pet-menu-quiet" type="button" role="menuitem">安静一小时</button></div>
+    <div id="pet-menu" class="pet-menu" role="menu" aria-label="桌宠操作" hidden><button id="pet-menu-chat" type="button" role="menuitem">聊聊今天 ↗</button><button id="pet-menu-touch" type="button" role="menuitem">摸摸头</button><button id="pet-perch" type="button" role="menuitem">爬上窗口</button><button id="pet-menu-walk" type="button" role="menuitem">去走走</button><button id="pet-menu-stop" type="button" role="menuitem">停步／下来</button><button id="pet-menu-actions" type="button" role="menuitem">选个动作</button><button id="pet-menu-quiet" type="button" role="menuitem">安静一小时</button></div>
     <canvas id="sprite" role="button" tabindex="0" aria-haspopup="menu" aria-expanded="false" aria-label="桌宠，点击聊天，右键更多操作，拖动后松手抛出"></canvas>`
   const canvas = $('sprite')
   const ratio = devicePixelRatio || 1
@@ -115,6 +117,7 @@ function mountPet() {
   $('pet-dismiss').addEventListener('click', () => { bubbles.dismiss(); renderPet() })
   const menu = visible => { $('pet-menu').hidden = !visible; canvas.setAttribute('aria-expanded', String(visible)); renderPet() }
   $('pet-menu-chat').addEventListener('click', () => { menu(false); invoke('show_panel').catch(showError) })
+  $('pet-menu-touch').addEventListener('click', event => action(event.currentTarget, async () => { await invoke('companion_command', { command: 'pet:touch', args: {} }); menu(false) }))
   $('pet-menu-actions').addEventListener('click', () => { menu(false); invoke('show_panel', { tab: 'actions' }).catch(showError) })
   $('pet-menu-quiet').addEventListener('click', event => action(event.currentTarget, async () => { await invoke('companion_command', { command: 'screen:pause', args: { minutes: 60 } }); await invoke('motion_command',{command:'pause'}); menu(false) }))
   for(const [id,command]of [['pet-menu-walk','walk'],['pet-menu-stop','stop']])$(id).addEventListener('click',event=>action(event.currentTarget,async()=>{await invoke('motion_command',{command});menu(false)}))
@@ -229,11 +232,13 @@ async function loadSheet(name) {
 function drawSprite() {
   clearTimeout(animationTimer)
   if (document.hidden || !spriteContext) return
-  const name = spriteAnimation()
+  const playback = petPlayback()
+  const name = playback.name
   const sheet = sheets[name]
   if (!sheet) { loadSheet(name).then(drawSprite).catch(showError); return }
-  if (activeAnimation !== name) {
+  if (activeAnimation !== name || activeIntent !== playback.intent) {
     activeAnimation = name
+    activeIntent = playback.intent
     animationFrame = 0
   }
   const frame = reduceMotion.matches ? 0 : sheet.loop === false ? Math.min(animationFrame, sheet.frames - 1) : animationFrame % sheet.frames
@@ -257,20 +262,14 @@ function drawSprite() {
   const bands=placeBands(sheet.bands[frame],{x,y},scale)
   spriteBands = (mirrored?mirrorBands(bands,CANVAS_SIZE):bands).map(b=>({...b,x:b.x+bounds.x,y:b.y+bounds.y}))
   sendHitRegions()
-  if (!reduceMotion.matches && !state.motion.paused && (sheet.loop !== false || animationFrame < sheet.frames - 1)) {
+  if (!reduceMotion.matches && !playback.paused && (sheet.loop !== false || animationFrame < sheet.frames - 1)) {
     animationFrame++
     animationTimer = setTimeout(drawSprite, 1000 / sheet.fps)
   }
 }
 
-function spriteAnimation() {
-  const task = currentTask(state.tasks)
-  const base = presentation(task, state.motion.paused&&isActive(task)?'settled':state.motion.phase)
-  if (['dragging','flying','walking','climbing','hoisting','descending'].includes(state.motion.phase) || base.active) return base.animation
-  if (bubbles.read()?.source === 'alert') return 'wave'
-  if (companionBubble?.until > Date.now()) return companionBubble.animation || 'idle'
-  if (state.motion.phase === 'perched') return 'sit'
-  return bubbles.read()?.source === 'task' ? base.animation : 'idle'
+function petPlayback() {
+  return spritePlayback({ task: currentTask(state.tasks), motion: state.motion, scene: companionBubble, notice: bubbles.read() })
 }
 
 function sendHitRegions() {
@@ -319,13 +318,13 @@ function renderPet() {
   const notice = bubbles.read()
   $('pet-bubble').hidden = !notice || !$('pet-menu').hidden
   renderStatus($('pet-status'), task)
-  const companionSpeaking = companionBubble?.until > Date.now() && !info.active
+  const companionSpeaking = notice?.source === 'speech' && !info.active
   $('pet-message').textContent = notice?.source === 'error' ? '' : short(notice?.text, 105)
   $('pet-bubble').classList.toggle('companion-speaking', !!companionSpeaking)
   if(notice){$('pet-status').textContent=notice.label;$('pet-status').dataset.state=notice.source==='error'?'failed':notice.source==='speech'?'idle':task?.status||'idle'}
   $('pet-error').textContent = notice?.source === 'error' ? notice.text : ''
   $('pet-bubble').classList.toggle('has-error', notice?.source === 'error')
-  $('pet-stop').classList.toggle('hidden', !notice?.active)
+  $('pet-stop').classList.toggle('hidden', !isActive(task))
   $('pet-open').textContent = notice?.source === 'alert' ? '全部提醒' : notice?.source === 'task' ? '查看任务' : '聊两句'
   renderAlertActions(notice,!$('pet-bubble').hidden)
   $('pet-perch').textContent = state.motion.phase === 'perched' ? '下来' : '爬上窗口'
@@ -334,7 +333,8 @@ function renderPet() {
   $('pet-menu-stop').classList.toggle('hidden',!state.positionable)
   $('sprite').classList.toggle('dragging', state.motion.phase === 'dragging')
   $('sprite').setAttribute('aria-label', state.positionable ? '桌宠，点击聊天，右键更多操作，拖动后松手抛出' : '桌宠，点击聊天，右键更多操作')
-  if (activeAnimation !== spriteAnimation() || reduceMotion.matches) drawSprite()
+  const playback = petPlayback()
+  if (activeAnimation !== playback.name || activeIntent !== playback.intent || reduceMotion.matches) drawSprite()
   sendHitRegions()
   if (notice && Number.isFinite(notice.until)) bubbleTimer = setTimeout(renderPet, Math.max(1, notice.until - Date.now()))
 }

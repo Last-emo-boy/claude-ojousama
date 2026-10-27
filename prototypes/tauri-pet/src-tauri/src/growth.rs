@@ -225,3 +225,15 @@ mod tests {
         assert!(retrieve(&d, "Tauri 桌宠").starts_with("正在开发"));
     }
 }
+
+pub fn gain_xp(d: &mut Value, n: u64) {
+    let xp = d["growth"]["xp"].as_u64().unwrap_or(0) + n;
+    d["growth"]["xp"] = json!(xp);
+    let levels = [0, 30, 80, 150, 250, 400, 600, 850, 1150, 1500];
+    let level = if xp >= 1500 {
+        10 + (xp - 1500) / 400
+    } else {
+        levels.iter().filter(|n| xp >= **n).count() as u64
+    };
+    d["growth"]["level"] = json!(level);
+}

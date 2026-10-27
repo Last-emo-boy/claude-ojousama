@@ -63,6 +63,15 @@ test('closing the visible bubble does not reveal an older notice underneath it',
   assert.equal(state.read(201), null)
 })
 
+test('an animation-only event cannot erase or extend an existing spoken sentence', () => {
+  const state = createBubbleState()
+  state.speak({ text: '任务做好了', until: 12000 }, 0)
+  state.speak({ text: '', animation: 'shy', until: 7000 }, 3000)
+  assert.equal(state.read(3001).text, '任务做好了')
+  assert.equal(state.read(11999).text, '任务做好了')
+  assert.equal(state.read(12000), null)
+})
+
 
 test('actionable reminders expire, outrank casual speech, but yield to a task approval', () => {
   const state=createBubbleState()

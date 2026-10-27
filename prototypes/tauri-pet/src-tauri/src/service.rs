@@ -2,6 +2,7 @@ use crate::{
     accessibility::Target,
     alerts,
     backend::{StartRequest, TaskManager, TaskView},
+    behavior,
     companion::{self, Companion},
     growth, observer, utilities,
 };
@@ -9,7 +10,10 @@ use serde_json::{json, Value};
 use std::{
     collections::VecDeque,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
 };
 
 type Emit = Arc<dyn Fn(&str, Value) + Send + Sync>;
@@ -22,6 +26,7 @@ pub struct Service {
     documents: PathBuf,
     runtime: Arc<Mutex<Runtime>>,
     emit: Emit,
+    activity_until: Arc<AtomicU64>,
 }
 struct Job {
     id: u64,
@@ -74,6 +79,8 @@ struct Runtime {
     alert: Option<AlertDelivery>,
     alert_attempt_after: u64,
     alert_token: u64,
+    behavior: behavior::State,
+    body_context: behavior::Context,
 }
 impl Service {
     pub fn new(
@@ -92,6 +99,7 @@ impl Service {
             documents,
             runtime: Arc::new(Mutex::new(Runtime::default())),
             emit,
+            activity_until: Arc::new(AtomicU64::new(0)),
         })
     }
     pub fn snapshot(&self) -> Value {
@@ -115,11 +123,63 @@ impl Service {
     pub fn changed(&self) {
         (self.emit)("companion:update", self.snapshot());
     }
-    pub fn say(&self, text: &str, animation: &str) {
+    fn gesture(&self, text: &str, animation: &str, duration: u64, autonomous: bool) {
+        let now = companion::now();
+        if !(autonomous && animation == "nap") {
+            self.activity_until
+                .fetch_max(now + duration.min(12_000), Ordering::Relaxed);
+        }
         (self.emit)(
             "companion:bubble",
-            json!({"text":text,"animation":animation,"until":companion::now()+12_000}),
+            json!({"text":text,"animation":animation,"until":now+duration,"autonomous":autonomous}),
         );
+    }
+    pub fn say(&self, text: &str, animation: &str) {
+        self.gesture(text, animation, 12_000, false);
+    }
+    pub fn activity_busy(&self) -> bool {
+        self.activity_until.load(Ordering::Relaxed) > companion::now()
+    }
+    pub fn body_context(&self, context: behavior::Context) {
+        let mut r = self.runtime.lock().unwrap();
+        if !r.stopping {
+            r.body_context = context;
+        }
+    }
+    fn habits(&self, d: &Value, idle: f64, busy: bool) -> Result<(), String> {
+        let now = companion::now();
+        let update = {
+            let mut r = self.runtime.lock().unwrap();
+            if r.stopping {
+                return Ok(());
+            }
+            let blocked = busy
+                || self.activity_busy()
+                || r.job.is_some()
+                || r.preparing
+                || r.alert.is_some()
+                || r.pending_ambient.is_some();
+            let context = r.body_context;
+            r.behavior
+                .tick(d, now, idle, context, blocked, companion::quiet_hours(d))
+        };
+        if update.decay {
+            self.data.change(|d| {
+                behavior::decay(d);
+                Ok(())
+            })?;
+            self.changed();
+        }
+        if let Some(scene) = update.scene {
+            if scene.animation == "gift" {
+                self.data.change(|d| {
+                    d["pet"]["lastGiftAt"] = json!(now);
+                    Ok(())
+                })?;
+            }
+            self.gesture(scene.text, scene.animation, scene.duration, true);
+        }
+        Ok(())
     }
     pub fn apply(&self, command: &str, args: Value) -> Result<Value, String> {
         if command == "weather:refresh" {
@@ -313,6 +373,37 @@ impl Service {
         if command == "goal:run" {
             return self.goal(args["id"].clone());
         }
+        if command == "pet:touch" {
+            if self.runtime.lock().unwrap().stopping {
+                return Err("应用正在退出".into());
+            }
+            if self.tasks.list().iter().any(|task| !done(task)) {
+                return Err("正在处理任务，等完成后再摸摸吧。".into());
+            }
+            let now = companion::now();
+            let attention = self.data.change(|d| {
+                let result = behavior::attention(d, now);
+                if result.is_some() {
+                    growth::gain_xp(d, 1);
+                }
+                Ok(result)
+            })?;
+            let gift = attention == Some(true);
+            self.gesture(
+                if gift {
+                    "送你一个小惊喜。"
+                } else if attention.is_some() {
+                    "嗯，摸摸收到啦。"
+                } else {
+                    ""
+                },
+                if gift { "gift" } else { "shy" },
+                4000,
+                false,
+            );
+            self.changed();
+            return Ok(json!({"rewarded":attention.is_some(),"gift":gift}));
+        }
         if command == "prank" {
             if self.tasks.list().iter().any(|task| !done(task)) {
                 return Err("正在处理任务，完成后再试这个动作".into());
@@ -326,10 +417,7 @@ impl Service {
             {
                 return Err("未知动作".into());
             }
-            (self.emit)(
-                "companion:bubble",
-                json!({"text":"","animation":name,"until":companion::now()+5000}),
-            );
+            self.gesture("", name, 5000, false);
             return Ok(Value::Null);
         }
         let result = if matches!(command, "observation:set" | "screen:pause") {
@@ -657,6 +745,9 @@ impl Service {
                 .as_array_mut()
                 .ok_or("聊天数据损坏")?
                 .push(json!({"role":"user","text":text,"ts":companion::now(),"typed":typed}));
+            if behavior::attention(d, companion::now()).is_some() {
+                growth::gain_xp(d, 1);
+            }
             let messages = d["chat"]["messages"].as_array_mut().unwrap();
             if messages.len() > 300 {
                 messages.drain(..messages.len() - 300);
@@ -698,6 +789,7 @@ impl Service {
         self.refresh_alerts()?;
         let d = self.data.snapshot();
         let busy = self.tasks.list().iter().any(|t| !done(t));
+        let idle = observer::idle_seconds();
         let present = !companion::quiet_hours(&d)
             && !busy
             && observer::unlocked()
@@ -706,6 +798,7 @@ impl Service {
             return Ok(());
         }
         self.deliver_ambient(&d);
+        self.habits(&d, idle, busy)?;
         if companion::quiet_hours(&d) {
             return Ok(());
         }
@@ -869,7 +962,7 @@ impl Service {
                         });
                     }
                     let (role, text) = if task.status == "completed" {
-                        gain_xp(d, 2);
+                        growth::gain_xp(d, 2);
                         ("assistant", task.output.clone())
                     } else {
                         (
@@ -1086,7 +1179,7 @@ impl Service {
                 .is_some_and(|at| at > 0 && at <= now);
             alerts::reconcile(d, now);
             if pomo {
-                gain_xp(d, 5);
+                growth::gain_xp(d, 5);
             }
             Ok(())
         })?;
@@ -1110,17 +1203,7 @@ impl Service {
 fn done(t: &TaskView) -> bool {
     matches!(t.status.as_str(), "completed" | "failed" | "cancelled")
 }
-fn gain_xp(d: &mut Value, n: u64) {
-    let xp = d["growth"]["xp"].as_u64().unwrap_or(0) + n;
-    d["growth"]["xp"] = json!(xp);
-    let levels = [0, 30, 80, 150, 250, 400, 600, 850, 1150, 1500];
-    let level = if xp >= 1500 {
-        10 + (xp - 1500) / 400
-    } else {
-        levels.iter().filter(|n| xp >= **n).count() as u64
-    };
-    d["growth"]["level"] = json!(level);
-}
+
 fn eligible(d: &Value, now: u64, looks: &mut VecDeque<u64>, last: u64) -> bool {
     if d["observation"]["enabled"] != true
         || !matches!(d["observation"]["consentVersion"].as_u64(), Some(1 | 2))
@@ -1224,6 +1307,210 @@ mod tests {
         assert!(!eligible(&d, 200_000, &mut looks, 0));
         looks.clear();
         assert!(!eligible(&d, 200_000, &mut looks, 150_000));
+    }
+}
+
+#[cfg(test)]
+mod behavior_tests {
+    use super::*;
+    type Events = Arc<Mutex<Vec<(String, Value)>>>;
+    fn fixture(name: &str) -> (Service, Events, PathBuf) {
+        let root =
+            std::env::temp_dir().join(format!("ojousama-habits-{name}-{}", companion::now()));
+        std::fs::create_dir_all(&root).unwrap();
+        let events: Events = Arc::new(Mutex::new(Vec::new()));
+        let sink = events.clone();
+        let data = Companion::open(root.join("pet-data.json"), None).unwrap();
+        data.change(|d| {
+            d["settings"]["quietStart"] = json!("");
+            Ok(())
+        })
+        .unwrap();
+        let service = Service::new(
+            data,
+            TaskManager::ephemeral(Arc::new(|_| {})),
+            root.join("work"),
+            root.join("documents"),
+            Arc::new(move |name, value| sink.lock().unwrap().push((name.into(), value))),
+        )
+        .unwrap();
+        (service, events, root)
+    }
+    fn context() -> behavior::Context {
+        behavior::Context {
+            at: companion::now(),
+            free: true,
+            may_sleep: true,
+            unlocked: true,
+        }
+    }
+    fn arm(service: &Service) {
+        let d = service.data.snapshot();
+        let old = companion::now() - 130_000;
+        service.runtime.lock().unwrap().behavior.tick(
+            &d,
+            old,
+            0.0,
+            behavior::Context {
+                at: old,
+                ..context()
+            },
+            false,
+            false,
+        );
+        service.body_context(context());
+    }
+    #[test]
+    fn idle_scene_stays_local_and_does_not_create_a_task_or_journal() {
+        let (service, events, root) = fixture("local");
+        arm(&service);
+        service
+            .habits(&service.data.snapshot(), 0.0, false)
+            .unwrap();
+        let events = events.lock().unwrap();
+        let scenes: Vec<_> = events
+            .iter()
+            .filter(|(name, _)| name == "companion:bubble")
+            .collect();
+        assert_eq!(scenes.len(), 1);
+        assert_eq!(scenes[0].1["text"], "");
+        assert_eq!(scenes[0].1["autonomous"], true);
+        assert!(service.tasks.list().is_empty());
+        assert!(service.background.list().is_empty());
+        assert_eq!(std::fs::read_dir(root.join("work")).unwrap().count(), 0);
+        service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn speech_alerts_captures_and_tasks_take_priority_over_idle_scenes() {
+        for gate in 0..6 {
+            let (service, events, root) = fixture(&format!("priority-{gate}"));
+            arm(&service);
+            {
+                let mut r = service.runtime.lock().unwrap();
+                match gate {
+                    0 => service
+                        .activity_until
+                        .store(companion::now() + 12_000, Ordering::Relaxed),
+                    1 => {
+                        r.alert = Some(AlertDelivery {
+                            id: json!(1),
+                            token: 1,
+                            until: companion::now() + 30_000,
+                            shown: false,
+                        })
+                    }
+                    2 => {
+                        r.pending_ambient =
+                            Some(("等你有空".into(), r.epoch, companion::now() + 30_000))
+                    }
+                    3 => r.preparing = true,
+                    4 => {
+                        r.job = Some(Job {
+                            id: 1,
+                            kind: "look".into(),
+                            epoch: r.epoch,
+                            deadline: companion::now() + 30_000,
+                        })
+                    }
+                    _ => {}
+                }
+            }
+            service
+                .habits(&service.data.snapshot(), 0.0, gate == 5)
+                .unwrap();
+            assert!(events.lock().unwrap().is_empty());
+            service.shutdown();
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+    #[test]
+    fn a_new_alert_is_delivered_before_a_due_idle_gesture() {
+        let (service, events, root) = fixture("new-alert");
+        arm(&service);
+        service
+            .data
+            .apply(
+                "reminder:add",
+                json!({"text":"测试提醒","at":companion::now()+60_000}),
+            )
+            .unwrap();
+        service
+            .data
+            .change(|d| {
+                d["reminders"][0]["at"] = json!(companion::now() - 1000);
+                Ok(())
+            })
+            .unwrap();
+        service.refresh_alerts().unwrap();
+        events.lock().unwrap().clear();
+        assert!(service.deliver_alerts(true));
+        service
+            .habits(&service.data.snapshot(), 0.0, false)
+            .unwrap();
+        assert!(events
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(name, _)| name != "companion:bubble"));
+        service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn touch_repeats_the_reaction_but_not_the_reward_and_shutdown_stops_habits() {
+        let (service, events, root) = fixture("touch");
+        let first = service.apply("pet:touch", json!({})).unwrap();
+        let next = service.apply("pet:touch", json!({})).unwrap();
+        assert_eq!(first["rewarded"], true);
+        assert_eq!(next["rewarded"], false);
+        assert_eq!(service.data.snapshot()["growth"]["xp"], 1);
+        assert_eq!(service.data.snapshot()["pet"]["affection"], 1);
+        assert_eq!(
+            events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(n, _)| n == "companion:bubble")
+                .count(),
+            2
+        );
+        arm(&service);
+        service.shutdown();
+        events.lock().unwrap().clear();
+        let at = service.runtime.lock().unwrap().body_context.at;
+        service.body_context(behavior::Context {
+            at: at + 10,
+            ..context()
+        });
+        assert_eq!(service.runtime.lock().unwrap().body_context.at, at);
+        service
+            .habits(&service.data.snapshot(), 0.0, false)
+            .unwrap();
+        assert!(events.lock().unwrap().is_empty());
+        assert!(service.apply("pet:touch", json!({})).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn nap_does_not_hold_the_animation_deadline_for_an_hour() {
+        let (service, events, root) = fixture("nap");
+        service.body_context(context());
+        service
+            .habits(&service.data.snapshot(), 301.0, false)
+            .unwrap();
+        assert!(!service.activity_busy());
+        service
+            .habits(&service.data.snapshot(), 0.0, false)
+            .unwrap();
+        let scenes: Vec<_> = events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(n, _)| n == "companion:bubble")
+            .map(|(_, v)| v["animation"].clone())
+            .collect();
+        assert_eq!(scenes, vec![json!("nap"), json!("stretch")]);
+        service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
 

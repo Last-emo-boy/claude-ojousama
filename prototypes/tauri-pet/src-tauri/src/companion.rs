@@ -243,6 +243,7 @@ pub(crate) fn apply(d: &mut Value, command: &str, args: Value) -> Result<Value, 
                 .iter_mut()
                 .find(|x| id(&x["id"]) == id(&args["id"]))
                 .ok_or("记录不存在")?;
+            let was_done = item["done"] == true;
             let fields = if key == "todos" {
                 &["text", "due", "done"][..]
             } else {
@@ -267,7 +268,12 @@ pub(crate) fn apply(d: &mut Value, command: &str, args: Value) -> Result<Value, 
             if key == "goals" {
                 item["nextAt"] = json!(next_check(item, now()));
             }
-            Ok(item.clone())
+            let value = item.clone();
+            if key == "todos" && !was_done && value["done"] == true {
+                crate::behavior::reward(d);
+                crate::growth::gain_xp(d, 3);
+            }
+            Ok(value)
         }
         "todo:remove" | "reminder:remove" | "memory:remove" | "goal:remove" => {
             let key = command.split(':').next().unwrap();
@@ -303,6 +309,25 @@ pub(crate) fn apply(d: &mut Value, command: &str, args: Value) -> Result<Value, 
                 if d["settings"].get(key).is_none() {
                     return Err(format!("未知设置：{key}"));
                 }
+                match key.as_str() {
+                    "idleActions" | "proactive" | "focusGuard" if !value.is_boolean() => {
+                        return Err("陪伴开关格式错误".into());
+                    }
+                    "autonomy"
+                        if !matches!(value.as_str(), Some("quiet" | "normal" | "active")) =>
+                    {
+                        return Err("请选择有效的活跃程度".into());
+                    }
+                    "mischief" if !value.as_u64().is_some_and(|n| n <= 3) => {
+                        return Err("小惊喜频率需为 0–3".into());
+                    }
+                    "waterMinutes" if !value.as_u64().is_some_and(|n| n <= 600) => {
+                        return Err("喝水提醒需为 0–600 分钟".into());
+                    }
+                    _ => {}
+                }
+            }
+            for (key, value) in object {
                 d["settings"][key] = value.clone();
             }
             Ok(d["settings"].clone())
@@ -339,6 +364,57 @@ pub(crate) fn apply(d: &mut Value, command: &str, args: Value) -> Result<Value, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn completing_a_todo_rewards_once_and_unrelated_edits_do_not_reward() {
+        let mut d = defaults();
+        apply(&mut d, "todo:add", json!({"text":"完成一小步"})).unwrap();
+        let id = d["todos"][0]["id"].clone();
+        apply(
+            &mut d,
+            "todo:update",
+            json!({"id":id,"patch":{"done":true}}),
+        )
+        .unwrap();
+        assert_eq!(d["growth"]["xp"], 3);
+        assert_eq!(d["pet"]["affection"], 1);
+        apply(
+            &mut d,
+            "todo:update",
+            json!({"id":id,"patch":{"done":true,"text":"修改标题"}}),
+        )
+        .unwrap();
+        assert_eq!(d["growth"]["xp"], 3);
+        assert_eq!(d["pet"]["affection"], 1);
+    }
+    #[test]
+    fn habit_settings_validate_only_submitted_fields_without_partial_updates() {
+        let mut d = defaults();
+        let before = d["settings"].clone();
+        assert!(apply(
+            &mut d,
+            "settings:set",
+            json!({"idleActions":false,"waterMinutes":601})
+        )
+        .is_err());
+        assert_eq!(d["settings"], before);
+        for patch in [
+            json!({"waterMinutes":1.5}),
+            json!({"mischief":4}),
+            json!({"autonomy":"loud"}),
+            json!({"proactive":0}),
+        ] {
+            assert!(apply(&mut d, "settings:set", patch).is_err());
+        }
+        apply(
+            &mut d,
+            "settings:set",
+            json!({"waterMinutes":0,"mischief":0,"autonomy":"quiet"}),
+        )
+        .unwrap();
+        apply(&mut d, "settings:set", json!({"weatherCity":"北京"})).unwrap();
+        assert_eq!(d["settings"]["waterMinutes"], 0);
+        assert_eq!(d["settings"]["weatherCity"], "北京");
+    }
     #[test]
     fn crud_preserves_legacy_ids_and_unknown_fields() {
         let mut d = defaults();

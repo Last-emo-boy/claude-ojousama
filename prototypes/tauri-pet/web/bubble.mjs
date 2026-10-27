@@ -36,7 +36,7 @@ export function createBubbleState() {
     },
     speak(value, now = Date.now()) {
       const text = String(value?.text || '').trim()
-      speech = text ? { source: 'speech', label: '大小姐', text, until: Math.min(Number(value.until) || now + 12000, now + 30000) } : null
+      if (text) speech = { source: 'speech', label: '大小姐', text, until: Math.min(Number(value.until) || now + 12000, now + 30000) }
     },
     alert(value, now = Date.now()) {
       if (value?.clear !== undefined) {

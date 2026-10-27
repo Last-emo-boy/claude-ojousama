@@ -3,6 +3,7 @@
 mod accessibility;
 mod alerts;
 mod backend;
+mod behavior;
 mod companion;
 mod desktop;
 mod desktop_entry;
@@ -502,7 +503,7 @@ async fn companion_command(
     if window.label() != "panel"
         && !matches!(
             command.as_str(),
-            "screen:pause" | "alert:ack" | "alert:respond" | "pomodoro:stop"
+            "screen:pause" | "alert:ack" | "alert:respond" | "pomodoro:stop" | "pet:touch"
         )
     {
         return Err("请从控制面板执行此操作".into());
@@ -1060,6 +1061,9 @@ fn start_motion(
         let mut last_error = String::new();
         let mut sequence = companion::now() ^ std::process::id() as u64;
         let mut observed_perch = None;
+        let mut body_at = Instant::now() - Duration::from_secs(2);
+        let mut session_unlocked = false;
+        let mut panel_open = false;
         while !stop.load(Ordering::Relaxed) {
             let now = Instant::now();
             let dt = now.duration_since(last).as_secs_f64().clamp(0.001, 0.05);
@@ -1095,10 +1099,12 @@ fn start_motion(
                         !matches!(t.status.as_str(), "completed" | "cancelled" | "failed")
                     });
                 let unlocked = observer::unlocked();
+                session_unlocked = unlocked;
                 let panel_visible = window
                     .app_handle()
                     .get_webview_window("panel")
                     .is_some_and(|w| w.is_visible().unwrap_or(false));
+                panel_open = panel_visible;
                 let fullscreen = d["settings"]["hideOnFullscreen"] != false
                     && native
                         .first()
@@ -1183,6 +1189,7 @@ fn start_motion(
                     .iter()
                     .any(|r| x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height)
             });
+            let activity_busy = window.app_handle().state::<State>().service.activity_busy();
             let pressed = observed.phase == "dragging" && left_pressed();
             let mut m = motion.lock().unwrap();
             let previous = (m.phase.clone(), m.facing, m.paused, m.pause_reason.clone());
@@ -1246,6 +1253,7 @@ fn start_motion(
                     m.land(&seats, old_feet, size);
                 }
                 if allowed
+                    && !activity_busy
                     && visible
                     && !inside
                     && !m.reduced
@@ -1326,6 +1334,26 @@ fn start_motion(
             {
                 trace_motion(&window, &snapshot);
                 let _ = window.emit("motion:update", snapshot.clone());
+            }
+            if same_owner && body_at.elapsed() >= Duration::from_secs(1) {
+                body_at = now;
+                let grounded = snapshot.phase == "settled";
+                let resting = !snapshot.paused || snapshot.pause_reason == "away";
+                window
+                    .app_handle()
+                    .state::<State>()
+                    .service
+                    .body_context(behavior::Context {
+                        at: companion::now(),
+                        unlocked: session_unlocked,
+                        free: visible
+                            && grounded
+                            && !snapshot.paused
+                            && !panel_open
+                            && !inside
+                            && snapshot.last_sample.elapsed() >= Duration::from_secs(10),
+                        may_sleep: visible && grounded && resting && !panel_open,
+                    });
             }
             if same_owner {
                 let target = if snapshot.phase == "perched" && !snapshot.paused {

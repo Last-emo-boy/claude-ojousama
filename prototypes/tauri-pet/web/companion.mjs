@@ -1,5 +1,6 @@
 import { clipboardPrompt, appendDraft, clipboardTodo, desktopPayload, desktopStatus } from './desktop-entry.mjs'
 import { observationPayload, observationStatus, observationPermissions } from './observation.mjs'
+import { habitPayload, moodLabel } from './behavior.mjs'
 const $ = id => document.getElementById(id)
 const text = (tag, value, className = '') => { const node = document.createElement(tag); node.textContent = value; node.className = className; return node }
 const date = ts => ts ? new Date(ts).toLocaleString('zh-CN', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''
@@ -53,10 +54,11 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
     <section id="view-goals" class="companion-view" hidden>
       <h2>持续推进的目标</h2><form id="goal-form" class="stack-form"><input id="goal-title" aria-label="目标" required placeholder="想持续推进什么？"><textarea id="goal-detail" aria-label="目标标准" placeholder="做到什么程度，哪些事情需要先问你？"></textarea><div class="workspace-row"><select id="goal-every" aria-label="跟进频率"><option value="daily">每天</option><option value="3h">每 3 小时</option><option value="hourly">每小时</option></select><input id="goal-at" type="time" value="09:00" aria-label="每日跟进时间"><button class="primary">添加目标</button></div></form><div id="goal-list" class="item-list"></div>
     </section>
-    <section id="view-growth" class="companion-view" hidden><h2 id="growth-level"></h2><h3>记住的事</h3><form id="memory-form" class="workspace-row"><input id="memory-text" aria-label="长期记忆" required placeholder="希望大小姐记住的偏好"><button>记住</button></form><div id="memory-list" class="item-list"></div><div class="quick-actions"><button id="growth-reflect">整理记忆与日记</button></div><h3>成长笔记</h3><div id="growth-notes"></div><h3>日记</h3><div id="growth-diary"></div></section>
+    <section id="view-growth" class="companion-view" hidden><h2 id="growth-level"></h2><div class="quick-actions"><span id="growth-affection"></span><button id="growth-touch" type="button">摸摸头</button></div><p id="growth-touch-state" class="muted" role="status"></p><h3>记住的事</h3><form id="memory-form" class="workspace-row"><input id="memory-text" aria-label="长期记忆" required placeholder="希望大小姐记住的偏好"><button>记住</button></form><div id="memory-list" class="item-list"></div><div class="quick-actions"><button id="growth-reflect">整理记忆与日记</button></div><h3>成长笔记</h3><div id="growth-notes"></div><h3>日记</h3><div id="growth-diary"></div></section>
     <section id="view-actions" class="companion-view" hidden><div class="actions-intro"><h2>让她去转转。</h2><p>一个小动作，也是一点陪伴。</p></div><div class="new-actions"><div class="action-art" id="climb-preview" aria-hidden="true"></div><div class="action-art" id="ledge-preview" aria-hidden="true"></div><div><span class="eyebrow">新动作</span><h3>从窗口边上，爬到你身边。</h3><p>沿着真实窗口的边缘走过去，再爬到窗沿坐下。</p></div></div><div class="desktop-activity"><h3>桌面活动</h3><div class="quick-actions"><button id="motion-walk" type="button">去走走</button><button id="motion-climb" type="button" class="primary">爬上窗口</button><button id="motion-stop" type="button">停步／下来</button><button id="motion-pause" type="button">暂停活动</button><button id="motion-resume" type="button">继续活动</button></div><div class="workspace-row"><select id="motion-screen" aria-label="目标显示器"></select><button id="motion-go" type="button">到这块屏幕</button><button id="motion-refresh" type="button">刷新</button></div><p id="motion-state" class="setting-help" role="status"></p><form id="motion-preferences" class="motion-preferences"><label class="check-row"><input id="motion-wander" type="checkbox">自主走动</label><label class="check-row"><input id="motion-windows" type="checkbox">自动爬窗</label><label class="check-row"><input id="motion-cross" type="checkbox">允许跨屏</label><label class="check-row"><input id="motion-fullscreen" type="checkbox">全屏时隐藏</label><button type="submit">保存偏好</button></form></div><h3>动作预览</h3><div id="action-gallery" class="action-gallery" aria-label="动作选择器"></div><p id="action-state" class="muted" role="status">选择一个动作，在桌宠上播放。不会弹出说话气泡。</p></section>
     <section id="view-activity" class="companion-view" hidden><h2>桌宠自己做的事</h2><div class="quick-actions"><button id="agenda-brief">今日简报</button><button id="agenda-pulse">只读巡检</button><button id="agenda-tip">来个小技巧</button><button id="summary-now">今日小结</button></div><div id="background-tasks" class="item-list"></div><h2>最近的动态</h2><div id="activity-list" class="item-list"></div></section>
     <section id="view-settings" class="companion-view" hidden>
+      <h2>日常陪伴</h2><form id="habits-form" class="stack-form"><label class="check-row"><input id="habit-idle" type="checkbox">闲时做点小动作，离开时打个盹</label><label class="check-row"><input id="habit-proactive" type="checkbox">喝水提醒和偶尔的小惊喜</label><label class="check-row"><input id="habit-focus" type="checkbox">专注计时中不打扰</label><div class="settings-grid"><label>活跃程度<select id="habit-autonomy"><option value="quiet">安静</option><option value="normal">适中</option><option value="active">活泼</option></select></label><label>小惊喜<select id="habit-mischief"><option value="0">关闭</option><option value="1">偶尔</option><option value="2">适中</option><option value="3">经常</option></select></label></div><label>喝水提醒间隔（分钟）<input id="habit-water" type="number" min="0" max="600" step="1" required></label><p class="setting-help">0 为关闭；只累计你使用电脑的时间。日常动作在本机运行，不调用 AI。</p><button class="primary">保存陪伴设置</button><p id="habits-state" role="status"></p></form>
       <h2>桌面入口</h2><form id="desktop-entry-form" class="stack-form"><label class="check-row"><input id="desktop-autostart" type="checkbox" disabled>登录后启动</label><p class="setting-help">安装到固定位置后再开启。</p><label>剪贴板快捷键<input id="desktop-hotkey" placeholder="CommandOrControl+Alt+Q" spellcheck="false"></label><p class="setting-help">留空关闭。快捷键只打开文字预览，不会自动发送给 AI。</p><div class="quick-actions"><button class="primary">保存桌面设置</button><button id="desktop-refresh" type="button">刷新状态</button></div><p id="desktop-state" role="status"></p></form>
       <h2>安静地陪着你</h2>
       <form id="observation-form" class="stack-form">
@@ -121,6 +123,8 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   })
   bind('note-open',()=>invoke('note_toggle'))
   bind('prank-dance',()=>call('prank',{name:'dance'}))
+  bind('growth-touch',async()=>{const value=await call('pet:touch');$('growth-touch-state').textContent=value.gift?'收到一份小惊喜。':value.rewarded?'好感度 +1 · 经验 +1':'嗯，还想再摸摸。'})
+  submit('habits-form',async()=>{await call('settings:set',habitPayload({idleActions:$('habit-idle').checked,proactive:$('habit-proactive').checked,focusGuard:$('habit-focus').checked,autonomy:$('habit-autonomy').value,mischief:$('habit-mischief').value,waterMinutes:$('habit-water').value}));$('habits-state').textContent='已保存'})
   const motion = async(command,screen) => {await invoke('motion_command',{command,screen});if(['walk','climb','screen'].includes(command))await invoke('hide_panel');await refreshMotion()}
   const refreshMotion = async() => {
     motionValue=await invoke('motion_status')
@@ -189,6 +193,7 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
     $('tidy-apply').hidden=!plan?.moves?.length
     $('weather-state').textContent=d.weather?`${d.weather.city} · ${d.weather.desc||''} ${d.weather.temp}°C`:''
     $('growth-level').textContent=`Lv.${d.growth.level||1} · ${d.growth.xp||0} XP`
+    $('growth-affection').textContent=`好感度 ${d.pet.affection||0} · ${moodLabel(d.pet.mood)}`
     $('growth-notes').replaceChildren(...(d.growth.notes||[]).map(n=>text('p',typeof n==='string'?n:n.text||'')))
     $('growth-diary').replaceChildren(...(d.growth.diary||[]).slice(-10).map(n=>text('p',typeof n==='string'?n:`${n.day||''} ${n.text||''}`)))
     list('activity-list',d.activity.slice(0,100),a=>row(a.text,date(a.ts)))
@@ -197,6 +202,8 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
     $('observer-state').textContent=observationStatus(conf,o);$('observer-permissions').textContent=observationPermissions(o.capabilities)
   }
   function fill() {const d=current.data,s=d.settings,o=d.observation
+    for(const [id,key]of [['habit-idle','idleActions'],['habit-proactive','proactive'],['habit-focus','focusGuard']])$(id).checked=s[key]!==false
+    $('habit-autonomy').value=s.autonomy||'active';$('habit-mischief').value=s.mischief??2;$('habit-water').value=s.waterMinutes??60
     $('weather-city').value=s.weatherCity||''
     $('nag-minutes').value=s.nagMinutes??5
     $('desktop-hotkey').value=s.hotkey||''
