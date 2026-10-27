@@ -21,6 +21,10 @@ regex = "1"
 open = "5"
 reqwest = { version = "0.13", features = ["blocking", "json"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
+arboard = { version = "3.7", default-features = false, features = ["wayland-data-control"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11rb = { version = "0.14", default-features = false, features = ["screensaver"] }

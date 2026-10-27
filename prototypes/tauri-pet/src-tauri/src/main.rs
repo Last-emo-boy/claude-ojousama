@@ -5,6 +5,7 @@ mod alerts;
 mod backend;
 mod companion;
 mod desktop;
+mod desktop_entry;
 mod growth;
 mod motion;
 mod observer;
@@ -29,7 +30,9 @@ use tauri::{
     tray::TrayIconBuilder,
     Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
+use tauri_plugin_autostart::ManagerExt as AutostartExt;
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 // Opt-in numeric trace for real pointer/inertia acceptance; no prompts or screen data.
 fn trace_motion(window: &WebviewWindow, motion: &Motion) {
@@ -120,6 +123,121 @@ struct State {
     regions: Arc<Mutex<Vec<Rect>>>,
     stop: Arc<AtomicBool>,
     positionable: bool,
+    desktop_entry: Arc<Mutex<desktop_entry::Controller>>,
+    clipboard_pending: AtomicBool,
+}
+
+struct DesktopHost {
+    app: tauri::AppHandle,
+    service: service::Service,
+    shortcut_supported: bool,
+}
+impl desktop_entry::Host for DesktopHost {
+    fn register(&mut self, key: Shortcut) -> Result<(), String> {
+        if !self.shortcut_supported {
+            return Err("当前桌面不提供全局快捷键".into());
+        }
+        self.app
+            .global_shortcut()
+            .register(key)
+            .map_err(|e| format!("快捷键未启用，可能已被占用：{e}"))
+    }
+    fn unregister(&mut self, key: Shortcut) -> Result<(), String> {
+        if !self.shortcut_supported {
+            return Ok(());
+        }
+        self.app
+            .global_shortcut()
+            .unregister(key)
+            .map_err(|e| e.to_string())
+    }
+    fn registered(&self, key: Shortcut) -> bool {
+        self.shortcut_supported && self.app.global_shortcut().is_registered(key)
+    }
+    fn autostart(&self) -> Result<bool, String> {
+        self.app
+            .autolaunch()
+            .is_enabled()
+            .map_err(|e| e.to_string())
+    }
+    fn set_autostart(&mut self, enabled: bool) -> Result<(), String> {
+        if enabled {
+            self.app.autolaunch().enable()
+        } else {
+            self.app.autolaunch().disable()
+        }
+        .map_err(|e| format!("登录启动设置失败：{e}"))
+    }
+    fn save(&mut self, args: Value) -> Result<Value, String> {
+        self.service.apply("settings:set", args)
+    }
+}
+fn request_clipboard(app: &tauri::AppHandle) -> Result<(), String> {
+    if observer::screen_supported() && !observer::unlocked() {
+        return Err("屏幕锁定时不读取剪贴板".into());
+    }
+    let state = app.state::<State>();
+    state.clipboard_pending.store(true, Ordering::Relaxed);
+    if let Err(error) = panel(app) {
+        state.clipboard_pending.store(false, Ordering::Relaxed);
+        return Err(error);
+    }
+    app.emit_to("panel", "panel:tab", "chat")
+        .map_err(|e| e.to_string())?;
+    app.emit_to("panel", "clipboard:request", ())
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
+fn clipboard_pending(window: WebviewWindow, state: tauri::State<State>) -> Result<bool, String> {
+    panel_only(&window)?;
+    Ok(state.clipboard_pending.swap(false, Ordering::Relaxed))
+}
+#[tauri::command]
+async fn clipboard_preview(window: WebviewWindow) -> Result<Value, String> {
+    panel_only(&window)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let allowed = || -> Result<bool, String> {
+            let detection = observer::screen_supported();
+            let unlocked = !detection || observer::unlocked();
+            let focused = window.is_focused().map_err(|e| e.to_string())?;
+            Ok(desktop_entry::clipboard_allowed(
+                detection, unlocked, focused,
+            ))
+        };
+        if !allowed()? {
+            return Err("请激活面板并确认屏幕已解锁，再读取剪贴板。".into());
+        }
+        let text = arboard::Clipboard::new()
+            .and_then(|mut clipboard| clipboard.get_text())
+            .map_err(|e| format!("无法读取剪贴板文字，可直接粘贴：{e}"))?;
+        if !allowed()? {
+            return Err("窗口状态已变化，本次剪贴板内容未带入。".into());
+        }
+        desktop_entry::clipboard_preview(text)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn desktop_status(
+    window: WebviewWindow,
+    state: tauri::State<'_, State>,
+) -> Result<Value, String> {
+    panel_only(&window)?;
+    let controller = state.desktop_entry.clone();
+    let host = DesktopHost {
+        app: window.app_handle().clone(),
+        service: state.service.clone(),
+        shortcut_supported: state.positionable,
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        controller
+            .lock()
+            .unwrap()
+            .status(&host, host.shortcut_supported)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 fn panel(app: &tauri::AppHandle) -> Result<(), String> {
@@ -400,9 +518,30 @@ async fn companion_command(
     }
     let service = state.service.clone();
     let operation = command.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || service.apply(&operation, args))
-        .await
-        .map_err(|e| e.to_string())??;
+    let controller = state.desktop_entry.clone();
+    let app = window.app_handle().clone();
+    let supported = state.positionable;
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        if operation == "settings:set"
+            && (args.get("hotkey").is_some() || args.get("autoStart").is_some())
+        {
+            let mut proposed = service.data.snapshot();
+            companion::apply(&mut proposed, "settings:set", args.clone())?;
+            let mut host = DesktopHost {
+                app,
+                service,
+                shortcut_supported: supported,
+            };
+            controller
+                .lock()
+                .unwrap()
+                .update(&mut host, args, supported)
+        } else {
+            service.apply(&operation, args)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())??;
     if command == "settings:set" {
         let d = state.service.data.snapshot();
         let s = &d["settings"];
@@ -1236,8 +1375,36 @@ fn main() {
     if cfg!(target_os = "linux") && positionable && std::env::var_os("DISPLAY").is_some() {
         std::env::set_var("GDK_BACKEND", "x11");
     }
-    let application = tauri::Builder::default()
+    let context = tauri::generate_context!();
+    let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if !args.iter().any(|arg| arg == "--from-autostart") {
+                if let Err(error) = panel(app) {
+                    eprintln!("open existing companion: {error}");
+                }
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .app_name(context.config().identifier.clone())
+                .arg("--from-autostart")
+                .build(),
+        );
+    if positionable {
+        builder = builder.plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        if let Err(error) = request_clipboard(app) {
+                            eprintln!("clipboard shortcut: {error}");
+                        }
+                    }
+                })
+                .build(),
+        );
+    }
+    let application = builder
         .setup(move |app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
@@ -1366,13 +1533,31 @@ fn main() {
                 regions: regions.clone(),
                 stop: stop.clone(),
                 positionable,
+                desktop_entry: Arc::new(Mutex::new(desktop_entry::Controller::default())),
+                clipboard_pending: AtomicBool::new(false),
             });
+            {
+                let state = app.state::<State>();
+                let settings = state.service.data.snapshot()["settings"].clone();
+                let mut host = DesktopHost {
+                    app: app.handle().clone(),
+                    service: state.service.clone(),
+                    shortcut_supported: positionable,
+                };
+                state.desktop_entry.lock().unwrap().initialize(
+                    &mut host,
+                    settings["hotkey"].as_str().unwrap_or(""),
+                    positionable,
+                );
+            }
             let show = MenuItem::with_id(app, "show", "打开任务", true, None::<&str>)?;
             let show_pet = MenuItem::with_id(app, "pet", "显示桌宠", true, None::<&str>)?;
             let perch =
                 MenuItem::with_id(app, "perch", "坐上窗口 / 下来", positionable, None::<&str>)?;
+            let clipboard =
+                MenuItem::with_id(app, "clipboard", "剪贴板快捷操作", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出原型", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &show_pet, &perch, &quit])?;
+            let menu = Menu::with_items(app, &[&show, &show_pet, &clipboard, &perch, &quit])?;
             let mut tray = TrayIconBuilder::new()
                 .tooltip("Ojousama Lite")
                 .menu(&menu)
@@ -1388,6 +1573,11 @@ fn main() {
                     "perch" => {
                         if let Err(error) = toggle_perch(app) {
                             let _ = app.emit("pet:error", error);
+                        }
+                    }
+                    "clipboard" => {
+                        if let Err(error) = request_clipboard(app) {
+                            eprintln!("clipboard menu: {error}");
                         }
                     }
                     "quit" => app.exit(0),
@@ -1416,6 +1606,9 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             bootstrap,
+            desktop_status,
+            clipboard_pending,
+            clipboard_preview,
             show_panel,
             hide_panel,
             quit_app,
@@ -1447,7 +1640,7 @@ fn main() {
             note_update,
             note_add
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("启动轻量桌宠失败");
     application.run(|app, event| {
         if matches!(event, tauri::RunEvent::ExitRequested { .. }) {

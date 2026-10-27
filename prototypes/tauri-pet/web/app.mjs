@@ -624,6 +624,9 @@ async function boot() {
   if (view === 'pet') {bubbles.task(currentTask(state.tasks), { snapshot: true });bubbles.alert(initial.companion?.alert)}
   if (view === 'panel' && initial.companion) {
     companionPanel = mountCompanion({invoke, initial: initial.companion, showError, platform:state.platform, onTasks: () => companionPanel.select('tasks')})
+    const clipboardRequest=async()=>{if(await invoke('clipboard_pending'))await companionPanel.previewClipboard()}
+    await window.__TAURI__.event.listen('clipboard:request',()=>clipboardRequest().catch(showError))
+    await clipboardRequest()
     await window.__TAURI__.event.listen('companion:update', event => companionPanel.update(event.payload))
     await window.__TAURI__.event.listen('panel:tab', event => companionPanel.select(event.payload))
     await window.__TAURI__.event.listen('motion:update',event=>companionPanel.motionUpdated(event.payload))

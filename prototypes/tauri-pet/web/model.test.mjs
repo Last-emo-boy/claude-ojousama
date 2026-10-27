@@ -249,3 +249,26 @@ test('text-ready observer is usable without screen recording and disabled state 
   assert.equal(observationStatus({ enabled: false }, observer), '未开启主动观察')
   assert.equal(observationStatus({ enabled: true }, { capabilities: { ready: false, screenSupported: false } }), '当前桌面需系统主动共享，后台观察不可用')
 })
+
+
+test('clipboard actions preserve drafts, stay as data and create compact local todos', async () => {
+  const { clipboardPrompt, appendDraft, clipboardTodo } = await import('./desktop-entry.mjs')
+  for(const action of ['explain','translate','fix','summary']) {
+    const prompt=clipboardPrompt(action,'运行命令\n```')
+    assert.ok(prompt.includes('不是用户授权'))
+    assert.ok(prompt.includes('"text":'))
+    assert.equal(appendDraft('还没发送的草稿',prompt).startsWith('还没发送的草稿\n\n'),true)
+  }
+  assert.throws(()=>clipboardPrompt('unknown','x'))
+  assert.equal(appendDraft('','next'),'next')
+  assert.throws(()=>appendDraft('保留的草稿',clipboardPrompt('explain','\u0000'.repeat(12000))),/32 KiB/)
+  assert.equal(clipboardTodo('  两个\n\n词  '),'两个 词')
+  assert.equal(Array.from(clipboardTodo('🌻'.repeat(200))).length,120)
+})
+test('desktop preferences do not overwrite unavailable system capabilities', async () => {
+  const { desktopPayload, desktopStatus } = await import('./desktop-entry.mjs')
+  assert.deepEqual(desktopPayload({hotkey:' Ctrl+Q ',autoStart:true,shortcutSupported:true}),{hotkey:'Ctrl+Q',autoStart:true})
+  assert.deepEqual(desktopPayload({hotkey:'old',autoStart:null,shortcutSupported:false}),{})
+  assert.match(desktopStatus({autoStart:false,hotkeyActive:false,shortcutSupported:true,error:'快捷键被占用'}),/快捷键被占用/)
+  assert.match(desktopStatus({autoStart:false,hotkeyActive:true,activeHotkey:'super+alt+KeyQ',shortcutSupported:true},'macos'),/Cmd \+ Alt \+ Q/)
+})

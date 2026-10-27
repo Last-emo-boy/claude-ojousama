@@ -223,3 +223,11 @@ details.settings summary { cursor: pointer; width: fit-content; }
 #panel-error { position: sticky; top: 8px; z-index: 2; background: #fff4ee; border-radius: 8px; padding: 10px 13px; }
 
 .pet-bubble.companion-speaking .pet-message { -webkit-line-clamp: 3; }
+
+.clipboard-quick { padding: 16px; margin-top: 16px; border: 1px solid var(--line); border-radius: 12px; }
+.clipboard-quick .section-heading { display: flex; align-items: center; justify-content: space-between; }
+.clipboard-quick h3 { margin: 0; }
+#clipboard-close { border: 0; background: transparent; padding: 2px 8px; font-size: 20px; }
+#clipboard-text { width: 100%; min-height: 110px; max-height: 220px; margin-top: 12px; }
+.clipboard-quick .quick-actions { margin-bottom: 10px; }
+.clipboard-quick button, #clipboard-state { font-size: 12px; }

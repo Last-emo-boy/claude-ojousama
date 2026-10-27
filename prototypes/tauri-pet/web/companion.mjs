@@ -1,3 +1,4 @@
+import { clipboardPrompt, appendDraft, clipboardTodo, desktopPayload, desktopStatus } from './desktop-entry.mjs'
 import { observationPayload, observationStatus, observationPermissions } from './observation.mjs'
 const $ = id => document.getElementById(id)
 const text = (tag, value, className = '') => { const node = document.createElement(tag); node.textContent = value; node.className = className; return node }
@@ -19,6 +20,7 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   let current = initial
   let tab = 'chat'
   let motionValue = null
+  let desktopValue = null
   const header = document.querySelector('.panel-header')
   const tasks = document.createElement('div'); tasks.id = 'view-tasks'
   const form = $('task-form'), result = document.querySelector('.tasks-section') || $('task-history').closest('section')
@@ -38,7 +40,8 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
       <div id="chat-welcome" class="chat-welcome"><div class="welcome-sprite" aria-hidden="true"></div><h2>今天，也一起。</h2><p>聊聊今天，或者从一件小事开始。</p></div>
       <div id="chat-messages" class="chat-messages" aria-live="polite"></div><p id="chat-live" role="status"></p><button id="chat-pending" type="button" hidden>查看需要确认的操作</button><div id="chat-question" class="pending-card" hidden></div><div id="pending-actions" class="item-list"></div>
       <form id="chat-form" class="chat-compose"><label for="chat-text" class="visually-hidden">和大小姐说点什么</label><textarea id="chat-text" required maxlength="20000" placeholder="说点什么，或者交给我一件事…"></textarea><div class="compose-footer"><button id="chat-new" type="button" class="subtle">＋ 新对话</button><button id="chat-stop" type="button" hidden>停止</button><button id="chat-send" class="primary">发送 ↗</button></div></form>
-      <div class="quick-actions"><button id="look-open" type="button">看看我在做什么</button><button id="note-open" type="button">贴便签</button><button id="prank-dance" type="button">跳支舞</button></div>
+      <div class="quick-actions"><button id="look-open" type="button">看看我在做什么</button><button id="clipboard-open" type="button">剪贴板操作</button><button id="note-open" type="button">贴便签</button><button id="prank-dance" type="button">跳支舞</button></div>
+      <section id="clipboard-quick" class="clipboard-quick" hidden><div class="section-heading"><h3>剪贴板文字</h3><button id="clipboard-close" type="button" aria-label="关闭并清除剪贴板预览">×</button></div><textarea id="clipboard-text" aria-label="剪贴板预览" maxlength="24000"></textarea><div class="quick-actions"><button type="button" data-clipboard="explain">解释</button><button type="button" data-clipboard="translate">翻译</button><button type="button" data-clipboard="fix">修 Bug</button><button type="button" data-clipboard="summary">总结</button><button type="button" data-clipboard="todo">记成待办</button></div><p id="clipboard-state" class="muted" role="status">只在本机预览；选择后带入输入框，发送前可修改。</p></section>
       <details id="look-controls"><summary>选择观察窗口</summary><p class="muted">选中窗口的画面或已启用的可见文字会交给 Codex 理解，不读取其他窗口。</p><div class="workspace-row"><select id="look-window" aria-label="观察窗口"></select><button id="look-refresh" type="button">刷新窗口</button><button id="look-now" type="button">看一下</button></div><p id="look-state" role="status"></p></details>
     </section>
     <section id="view-todos" class="companion-view" hidden>
@@ -54,6 +57,7 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
     <section id="view-actions" class="companion-view" hidden><div class="actions-intro"><h2>让她去转转。</h2><p>一个小动作，也是一点陪伴。</p></div><div class="new-actions"><div class="action-art" id="climb-preview" aria-hidden="true"></div><div class="action-art" id="ledge-preview" aria-hidden="true"></div><div><span class="eyebrow">新动作</span><h3>从窗口边上，爬到你身边。</h3><p>沿着真实窗口的边缘走过去，再爬到窗沿坐下。</p></div></div><div class="desktop-activity"><h3>桌面活动</h3><div class="quick-actions"><button id="motion-walk" type="button">去走走</button><button id="motion-climb" type="button" class="primary">爬上窗口</button><button id="motion-stop" type="button">停步／下来</button><button id="motion-pause" type="button">暂停活动</button><button id="motion-resume" type="button">继续活动</button></div><div class="workspace-row"><select id="motion-screen" aria-label="目标显示器"></select><button id="motion-go" type="button">到这块屏幕</button><button id="motion-refresh" type="button">刷新</button></div><p id="motion-state" class="setting-help" role="status"></p><form id="motion-preferences" class="motion-preferences"><label class="check-row"><input id="motion-wander" type="checkbox">自主走动</label><label class="check-row"><input id="motion-windows" type="checkbox">自动爬窗</label><label class="check-row"><input id="motion-cross" type="checkbox">允许跨屏</label><label class="check-row"><input id="motion-fullscreen" type="checkbox">全屏时隐藏</label><button type="submit">保存偏好</button></form></div><h3>动作预览</h3><div id="action-gallery" class="action-gallery" aria-label="动作选择器"></div><p id="action-state" class="muted" role="status">选择一个动作，在桌宠上播放。不会弹出说话气泡。</p></section>
     <section id="view-activity" class="companion-view" hidden><h2>桌宠自己做的事</h2><div class="quick-actions"><button id="agenda-brief">今日简报</button><button id="agenda-pulse">只读巡检</button><button id="agenda-tip">来个小技巧</button><button id="summary-now">今日小结</button></div><div id="background-tasks" class="item-list"></div><h2>最近的动态</h2><div id="activity-list" class="item-list"></div></section>
     <section id="view-settings" class="companion-view" hidden>
+      <h2>桌面入口</h2><form id="desktop-entry-form" class="stack-form"><label class="check-row"><input id="desktop-autostart" type="checkbox" disabled>登录后启动</label><p class="setting-help">安装到固定位置后再开启。</p><label>剪贴板快捷键<input id="desktop-hotkey" placeholder="CommandOrControl+Alt+Q" spellcheck="false"></label><p class="setting-help">留空关闭。快捷键只打开文字预览，不会自动发送给 AI。</p><div class="quick-actions"><button class="primary">保存桌面设置</button><button id="desktop-refresh" type="button">刷新状态</button></div><p id="desktop-state" role="status"></p></form>
       <h2>安静地陪着你</h2>
       <form id="observation-form" class="stack-form">
         <label class="check-row"><input id="observe-enabled" type="checkbox">主动观察当前窗口</label>
@@ -86,6 +90,35 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   const refresh = async()=>{const values=await invoke('observer_windows');$('look-window').replaceChildren(...values.map(w=>{const n=text('option',`${w.name} · ${w.title}`);n.value=w.id;return n}));$('look-controls').open=true}
   bind('look-open',refresh);bind('look-refresh',refresh)
   bind('look-now',async()=>{const id=Number($('look-window').value);if(!id)throw new Error('请先选择一个窗口');await invoke('look_now',{chosen:id});$('look-state').textContent='这次观察已开始，合适的内容会显示在桌宠气泡里。'})
+  async function previewClipboard() {
+    const value=await invoke('clipboard_preview')
+    $('clipboard-text').value=value.text;$('clipboard-quick').hidden=false
+    $('clipboard-state').textContent=value.truncated?`已带入前 ${Array.from(value.text).length} 字；过长部分未带入，可编辑后再发送。`:'只在本机预览；选择后带入输入框，发送前可修改。'
+    select('chat');$('clipboard-text').focus()
+  }
+  function clearClipboard() {$('clipboard-text').value='';$('clipboard-quick').hidden=true}
+  bind('clipboard-open',previewClipboard);bind('clipboard-close',clearClipboard)
+  for(const button of document.querySelectorAll('[data-clipboard]'))button.addEventListener('click',async()=>{
+    button.disabled=true
+    try {
+      const value=$('clipboard-text').value.trim();if(!value)throw new Error('请先复制或粘贴文字')
+      if(button.dataset.clipboard==='todo') {await call('todo:add',{text:clipboardTodo(value)});clearClipboard();select('todos')}
+      else {$('chat-text').value=appendDraft($('chat-text').value,clipboardPrompt(button.dataset.clipboard,value));clearClipboard();$('chat-text').focus()}
+    } catch(error){showError(error)} finally {button.disabled=false}
+  })
+  const refreshDesktop=async()=>{
+    desktopValue=await invoke('desktop_status')
+    $('desktop-autostart').disabled=typeof desktopValue.autoStart!=='boolean'
+    $('desktop-autostart').checked=desktopValue.autoStart===true
+    $('desktop-hotkey').disabled=!desktopValue.shortcutSupported
+    $('desktop-state').textContent=desktopStatus(desktopValue,platform)
+  }
+  bind('desktop-refresh',refreshDesktop)
+  submit('desktop-entry-form',async()=>{
+    if(!desktopValue)throw new Error('请先刷新桌面状态')
+    try {await call('settings:set',desktopPayload({hotkey:$('desktop-hotkey').value,autoStart:$('desktop-autostart').disabled?null:$('desktop-autostart').checked,shortcutSupported:desktopValue.shortcutSupported}))}
+    finally {await refreshDesktop()}
+  })
   bind('note-open',()=>invoke('note_toggle'))
   bind('prank-dance',()=>call('prank',{name:'dance'}))
   const motion = async(command,screen) => {await invoke('motion_command',{command,screen});if(['walk','climb','screen'].includes(command))await invoke('hide_panel');await refreshMotion()}
@@ -166,11 +199,12 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   function fill() {const d=current.data,s=d.settings,o=d.observation
     $('weather-city').value=s.weatherCity||''
     $('nag-minutes').value=s.nagMinutes??5
+    $('desktop-hotkey').value=s.hotkey||''
     for(const [id,key]of [['motion-wander','wander'],['motion-windows','climbWindows'],['motion-cross','crossScreens'],['motion-fullscreen','hideOnFullscreen']])$(id).checked=s[key]!==false
     $('observe-enabled').checked=!!o.enabled;$('observe-text').checked=!!o.accessibility;$('observe-consent').checked=o.accessibility?o.consentVersion===2:[1,2].includes(o.consentVersion);$('observe-interval').value=o.intervalSeconds;$('observe-max').value=o.maxPerHour;$('observe-exclude').value=o.excludeApps
     for(const [id,key]of [['companion-backend','backend'],['companion-dsh','dshExe'],['companion-profile','sourceProfile'],['companion-provider','provider'],['companion-dsh-model','model'],['companion-codex','codexExe'],['companion-model','codexModel'],['companion-glance-model','codexGlanceModel'],['companion-cwd','cwd'],['companion-permission','permission'],['quiet-start','quietStart'],['quiet-end','quietEnd']])$(id).value=s[key]||''
   }
-  function select(name) {if(!tabs.some(([n])=>n===name))return;tab=name;for(const [n]of tabs){const node=$(`view-${n}`);node.hidden=n!==name;nav.querySelector(`[data-tab="${n}"]`).setAttribute('aria-current',String(n===name))}const label=tabs.find(([n])=>n===name)[1];$('companion-title').textContent=name==='chat'?'今天也一起。':label;$('companion-subtitle').textContent=name==='chat'?`${current.data.settings.backend==='dsh'?'DeepSeek Harness':'Codex'} · 随时聊聊`:name==='actions'?'随心动一动，安静陪着你。':'Claude Ojousama';if(name==='actions'){fill();refreshMotion().catch(showError)}if(name==='settings'){fill();refreshObservation().catch(showError)}render()}
+  function select(name) {if(!tabs.some(([n])=>n===name))return;tab=name;for(const [n]of tabs){const node=$(`view-${n}`);node.hidden=n!==name;nav.querySelector(`[data-tab="${n}"]`).setAttribute('aria-current',String(n===name))}const label=tabs.find(([n])=>n===name)[1];$('companion-title').textContent=name==='chat'?'今天也一起。':label;$('companion-subtitle').textContent=name==='chat'?`${current.data.settings.backend==='dsh'?'DeepSeek Harness':'Codex'} · 随时聊聊`:name==='actions'?'随心动一动，安静陪着你。':'Claude Ojousama';if(name==='actions'){fill();refreshMotion().catch(showError)}if(name==='settings'){fill();refreshObservation().catch(showError);refreshDesktop().catch(showError)}render()}
   fill();select(tab)
-  return { motionUpdated(value){if(motionValue){motionValue.motion=value;renderMotion()}}, update(value){current=value;render()}, select, taskUpdated(tasks){const task=tasks.find(t=>t.id===current.chatTask);$('chat-live').textContent=task ? task.output||task.activity : ''; $('chat-send').disabled=!!current.chatTask; $('chat-stop').hidden=!current.chatTask; $('chat-pending').hidden=!task?.pending} }
+  return { previewClipboard, motionUpdated(value){if(motionValue){motionValue.motion=value;renderMotion()}}, update(value){current=value;render()}, select, taskUpdated(tasks){const task=tasks.find(t=>t.id===current.chatTask);$('chat-live').textContent=task ? task.output||task.activity : ''; $('chat-send').disabled=!!current.chatTask; $('chat-stop').hidden=!current.chatTask; $('chat-pending').hidden=!task?.pending} }
 }
