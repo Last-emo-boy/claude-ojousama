@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import select
+import shlex
 import shutil
 import socket
 import struct
@@ -42,6 +43,7 @@ def diagnose_desktop(log, processes):
         ['wmctrl', '-l', '-p', '-G'],
         ['xprop', '-root', '_NET_SUPPORTING_WM_CHECK', '_NET_CLIENT_LIST_STACKING', '_NET_CURRENT_DESKTOP', '_NET_ACTIVE_WINDOW'],
         ['xwininfo', '-root', '-tree'],
+        ['xwininfo', '-name', TITLE, '-stats'],
     ]:
         print('Independent X11 diagnostic: ' + ' '.join(command), file=log, flush=True)
         try:
@@ -145,8 +147,16 @@ def main():
     with tempfile.TemporaryDirectory(prefix='ojousama-native-x11-') as directory:
         with open(Path(directory, 'processes.log'), 'w+', encoding='utf-8') as log:
             try:
-                wm = subprocess.Popen(['openbox', '--sm-disable'], stdout=log, stderr=log)
+                ready = Path(directory, 'wm-ready')
+                startup = shlex.join([sys.executable, '-c',
+                    'import os; from pathlib import Path; Path(os.environ["OJOUSAMA_X11_READY"]).touch()'])
+                wm = subprocess.Popen(['openbox', '--sm-disable', '--startup', startup],
+                    env={**os.environ, 'OJOUSAMA_X11_READY': str(ready)}, stdout=log, stderr=log)
                 processes.append(wm)
+                # EWMH support is advertised before Openbox finishes initialization.
+                # Its startup hook runs after event handling and existing-client setup.
+                wait_for(lambda: {'ready': ready.exists(), 'exit': wm.poll()},
+                    lambda state: state['ready'] and state['exit'] is None, 'Openbox initialization')
                 helper = Helper(log)
                 processes.append(helper.process)
                 capabilities = wait_for(lambda: helper.request('capabilities'),
