@@ -269,6 +269,25 @@ test('automatic observation explains suspension without masking explicit manual 
   assert.equal(observationStatus({ enabled: true }, { ...ready, error: '读取失败', pauseReason: 'desktop' }), '读取失败')
   assert.equal(observationStatus({ enabled: true }, { capabilities: { ready: false, screenSupported: false }, pauseReason: 'desktop' }), '当前桌面需系统主动共享，后台观察不可用')
 })
+test('agenda controls preserve other rules and zero/empty values really disable automation', async () => {
+  const { agendaPayload, agendaStatus, backgroundText } = await import('./agenda.mjs')
+  const settings={ rules:{agenda:'auto',goals:'ask',open:'off',custom:'keep'},agendaPerDay:6,summaryTime:'18:30' }
+  const patch=agendaPayload(settings,{enabled:false,morningBrief:false,workspacePulse:false,agendaPerDay:0,summaryTime:''})
+  assert.deepEqual(patch,{rules:{...settings.rules,agenda:'off'},morningBrief:false,workspacePulse:false,agendaPerDay:0,summaryTime:''})
+  assert.equal(settings.rules.agenda,'auto')
+  assert.throws(()=>agendaPayload(settings,{agendaPerDay:31}),/0–30/)
+  assert.throws(()=>agendaPayload(settings,{agendaPerDay:1.5}),/0–30/)
+  assert.throws(()=>agendaPayload(settings,{agendaPerDay:6,summaryTime:'24:00'}),/时间/)
+  assert.match(agendaStatus({settings},{used:2,limit:6}),/今日已尝试 2 \/ 6 次/)
+  assert.match(agendaStatus({settings:patch}),/后台任务已关闭/)
+  assert.equal(agendaStatus({settings:patch},{used:2,limit:0}),'后台任务已关闭 · 今日已尝试 2 次')
+  assert.match(agendaStatus({settings},{used:6,limit:6}),/次数已用完/)
+  assert.match(agendaStatus({settings:patch},{used:2,limit:0,running:'summary'}),/正在准备今日小结/)
+  assert.match(agendaStatus({settings:{...settings,rules:{agenda:'off'}}}),/仅开启定时小结/)
+  assert.equal(backgroundText({kind:'reflect',text:'{"notes":["第一条",42],"diary":"今天的小日记"}'}),'第一条\n今天的小日记')
+  assert.equal(backgroundText({kind:'reflect',text:'旧版成长记录'}),'旧版成长记录')
+  assert.equal(backgroundText({kind:'reflect',text:'```json\n{"notes":["受控笔记"]}\n```'}),'受控笔记')
+})
 
 
 test('clipboard actions preserve drafts, stay as data and create compact local todos', async () => {

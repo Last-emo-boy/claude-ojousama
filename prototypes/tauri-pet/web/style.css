@@ -183,6 +183,9 @@ details.settings summary { cursor: pointer; width: fit-content; }
 #view-chat > .quick-actions button { background: transparent; font-size: 12px; padding: 6px 9px; }
 #look-controls { font-size: 12px; color: var(--muted); }
 #look-controls summary { cursor: pointer; }
+.agenda-preferences { margin: 22px 0; padding: 16px 0; border-block: 1px solid var(--line); }
+.agenda-preferences > summary { cursor: pointer; font-weight: 600; }
+.agenda-preferences .stack-form { padding: 18px 0 0; }
 .chat-welcome { text-align: center; padding: 40px 0; }
 .chat-welcome h2 { font-size: 24px; margin: 12px 0 8px; }
 .chat-welcome p { color: var(--muted); }

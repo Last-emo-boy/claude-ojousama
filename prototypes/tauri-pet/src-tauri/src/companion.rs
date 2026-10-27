@@ -189,12 +189,18 @@ pub fn next_check(goal: &Value, from: u64) -> u64 {
     }
 }
 pub fn quiet_hours(d: &Value) -> bool {
+    quiet_hours_at(d, now())
+}
+pub fn quiet_hours_at(d: &Value, at: u64) -> bool {
     let parse =
         |key| NaiveTime::parse_from_str(d["settings"][key].as_str().unwrap_or(""), "%H:%M").ok();
     let (Some(a), Some(b)) = (parse("quietStart"), parse("quietEnd")) else {
         return false;
     };
-    let t = Local::now().time();
+    let Some(date) = Local.timestamp_millis_opt(at as i64).single() else {
+        return true;
+    };
+    let t = date.time();
     if a > b {
         t >= a || t < b
     } else {
@@ -312,6 +318,7 @@ pub(crate) fn apply(d: &mut Value, command: &str, args: Value) -> Result<Value, 
                 }
                 match key.as_str() {
                     "idleActions" | "proactive" | "focusGuard" | "clipboardWatch"
+                    | "morningBrief" | "workspacePulse"
                         if !value.is_boolean() =>
                     {
                         return Err("陪伴开关格式错误".into());
@@ -329,6 +336,19 @@ pub(crate) fn apply(d: &mut Value, command: &str, args: Value) -> Result<Value, 
                     }
                     "clipboardWatchConsent" if !value.as_u64().is_some_and(|n| n <= 1) => {
                         return Err("剪贴板检测设置格式错误".into());
+                    }
+                    "agendaPerDay" if !value.as_u64().is_some_and(|n| n <= 30) => {
+                        return Err("每天最多尝试 0–30 次后台任务".into());
+                    }
+                    "summaryTime"
+                        if !value.as_str().is_some_and(|s| {
+                            s.is_empty() || NaiveTime::parse_from_str(s, "%H:%M").is_ok()
+                        }) =>
+                    {
+                        return Err("请选择有效的小结时间，或留空关闭".into());
+                    }
+                    "rules" if !value.is_object() => {
+                        return Err("自动安排设置格式错误".into());
                     }
                     _ => {}
                 }
@@ -420,6 +440,28 @@ mod tests {
         apply(&mut d, "settings:set", json!({"weatherCity":"北京"})).unwrap();
         assert_eq!(d["settings"]["waterMinutes"], 0);
         assert_eq!(d["settings"]["weatherCity"], "北京");
+    }
+    #[test]
+    fn agenda_controls_validate_atomically_and_preserve_unrelated_rules() {
+        let mut d = defaults();
+        let before = d["settings"].clone();
+        for patch in [
+            json!({"agendaPerDay":31}),
+            json!({"agendaPerDay":1.5}),
+            json!({"summaryTime":"25:00"}),
+            json!({"morningBrief":0}),
+            json!({"workspacePulse":"yes"}),
+            json!({"rules":"off"}),
+            json!({"morningBrief":false,"summaryTime":"bad"}),
+        ] {
+            assert!(apply(&mut d, "settings:set", patch).is_err());
+            assert_eq!(d["settings"], before);
+        }
+        let mut rules = d["settings"]["rules"].clone();
+        rules["agenda"] = json!("off");
+        apply(&mut d,"settings:set",json!({"agendaPerDay":0,"summaryTime":"","morningBrief":false,"workspacePulse":false,"rules":rules})).unwrap();
+        assert_eq!(d["settings"]["rules"]["goals"], before["rules"]["goals"]);
+        assert_eq!(d["settings"]["summaryTime"], "");
     }
     #[test]
     fn crud_preserves_legacy_ids_and_unknown_fields() {

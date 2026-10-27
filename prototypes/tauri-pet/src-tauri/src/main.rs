@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod accessibility;
+mod agenda;
 mod alerts;
 mod backend;
 mod behavior;
