@@ -89,8 +89,9 @@ test('failure exposes real error and unknown states never imply success', () => 
   assert.equal(presentation(null).animation, 'idle')
 })
 
-test('settings retain only the two supported sandbox policies', () => {
-  assert.equal(settingsFrom({ permission: 'danger-full-access' }).permission, 'read-only')
+test('settings preserve legacy full access, supported policies and the read-only default', () => {
+  assert.equal(settingsFrom({ permission: 'danger-full-access' }).permission, 'danger-full-access')
+  assert.equal(settingsFrom({ permission: 'unknown' }).permission, 'read-only')
   assert.equal(settingsFrom({ permission: 'workspace-write' }).permission, 'workspace-write')
   assert.deepEqual(settingsFrom(), { workspace: '', codexPath: '', model: '', permission: 'read-only' })
 })

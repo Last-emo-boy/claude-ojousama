@@ -18,7 +18,13 @@ pub fn defaults() -> Value {
     let mut data: Value =
         serde_json::from_str(include_str!("../../../../assets/companion-defaults.json"))
             .expect("valid shared defaults");
+    if cfg!(windows) {
+        data["settings"]["backend"] = json!("dsh");
+        data["settings"]["permission"] = json!("workspace-write");
+    }
     data["observation"] = json!({"enabled":false,"consentVersion":0,"intervalSeconds":120,"maxPerHour":4,"quiet":true,"excludeApps":"","pausedUntil":0});
+    data["pendingActions"] = json!([]);
+    data["backgroundTasks"] = json!([]);
     data["pomodoro"] = json!({"until":0,"minutes":25});
     data
 }
@@ -29,6 +35,11 @@ pub fn save(path: &Path, data: &Value) -> Result<(), String> {
         serde_json::to_vec_pretty(data).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
+    }
     #[cfg(not(windows))]
     fs::rename(tmp, path).map_err(|e| e.to_string())?;
     #[cfg(windows)]
@@ -75,6 +86,9 @@ impl Companion {
             }
             if imported.get("settings").is_some() && imported["settings"].get("backend").is_none() {
                 data["settings"]["backend"] = json!("dsh");
+                if imported["settings"].get("permission").is_none() {
+                    data["settings"]["permission"] = json!("workspace-write");
+                }
             }
             if source != path {
                 fs::copy(source, path.with_extension("legacy-backup.json"))

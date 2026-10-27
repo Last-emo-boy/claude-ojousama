@@ -47,7 +47,7 @@ export function settingsFrom(value = {}) {
     workspace: String(value.workspace || ''),
     codexPath: String(value.codexPath || ''),
     model: String(value.model || ''),
-    permission: value.permission === 'workspace-write' ? 'workspace-write' : 'read-only',
+    permission: ['read-only','workspace-write','danger-full-access'].includes(value.permission) ? value.permission : 'read-only',
   }
 }
 

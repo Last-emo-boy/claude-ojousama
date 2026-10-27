@@ -1,4 +1,6 @@
-//! Native, per-task Codex App Server connections. No browser or Node runtime is involved.
+//! Native per-task process management for Codex and optional installed DSH.
+#[path = "dsh.rs"]
+mod dsh;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -29,9 +31,15 @@ pub struct StartRequest {
     pub permission: String,
     pub codex_path: String,
     pub model: String,
+    pub reasoning_effort: String,
     pub session_id: String,
     pub instructions: String,
     pub restricted: bool,
+    pub backend: String,
+    pub backend_settings: Value,
+    #[cfg(test)]
+    #[serde(skip)]
+    pub dsh_test_home: Option<PathBuf>,
     #[serde(skip)]
     pub image: Option<String>,
 }
@@ -43,9 +51,14 @@ impl Default for StartRequest {
             permission: "read-only".into(),
             codex_path: String::new(),
             model: String::new(),
+            reasoning_effort: String::new(),
             session_id: String::new(),
             instructions: String::new(),
             restricted: false,
+            backend: "codex".into(),
+            backend_settings: Value::Null,
+            #[cfg(test)]
+            dsh_test_home: None,
             image: None,
         }
     }
@@ -240,8 +253,11 @@ impl TaskManager {
         if request.prompt.len() > 32_768 {
             return Err("任务描述请控制在 32 KiB 以内".into());
         }
-        if !matches!(request.permission.as_str(), "read-only" | "workspace-write") {
-            return Err("仅支持只读或工作区可写权限".into());
+        if !matches!(
+            request.permission.as_str(),
+            "read-only" | "workspace-write" | "danger-full-access"
+        ) {
+            return Err("无效的任务权限".into());
         }
         if request.workspace.trim().is_empty() {
             return Err("请选择工作目录".into());
@@ -252,12 +268,17 @@ impl TaskManager {
             return Err("工作目录必须是文件夹".into());
         }
         request.workspace = directory.to_string_lossy().into_owned();
-        let launch = match &self.launch_override {
-            Some(launch) => launch.clone(),
-            None => Launch {
-                executable: locate_codex(&request.codex_path)?,
-                args: Vec::new(),
-            },
+        let launch = if let Some(launch) = &self.launch_override {
+            launch.clone()
+        } else {
+            match request.backend.as_str() {
+                "codex" => Launch {
+                    executable: locate_codex(&request.codex_path)?,
+                    args: Vec::new(),
+                },
+                "dsh" => dsh::locate(&request)?,
+                _ => return Err("未知 AI 后端".into()),
+            }
         };
         let (tx, rx) = mpsc::channel();
         let ended = Arc::new((Mutex::new(false), Condvar::new()));
@@ -276,7 +297,12 @@ impl TaskManager {
                 workspace: request.workspace.clone(),
                 permission: request.permission.clone(),
                 status: "starting".into(),
-                activity: "连接 Codex…".into(),
+                activity: if request.backend == "dsh" {
+                    "连接 DSH…"
+                } else {
+                    "连接 Codex…"
+                }
+                .into(),
                 output: String::new(),
                 error: None,
                 thread_id: None,
@@ -750,6 +776,10 @@ fn run_task(
     launch: Launch,
     controls: mpsc::Receiver<Control>,
 ) {
+    if request.backend == "dsh" {
+        dsh::run(shared, id, request, launch, controls);
+        return;
+    }
     if matches!(controls.try_recv(), Ok(Control::Cancel)) {
         shared.finish(id, Outcome::Cancelled);
         return;
@@ -836,7 +866,7 @@ fn run_task(
         &mut stdin,
         1,
         "initialize",
-        json!({"clientInfo":{"name":"ojousama_lite","title":"Ojousama Lite","version":"0.1.0"},"capabilities":{"experimentalApi":true}}),
+        json!({"clientInfo":{"name":"claude_ojousama","title":"Claude Ojousama","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":true}}),
     ) {
         Ok(()) => session.run(&mut stdin, &rx, &controls),
         Err(error) => Outcome::Failed(error),
@@ -1067,6 +1097,10 @@ impl Session {
                         params["environments"] = json!([]);
                         params["ephemeral"] = json!(true);
                     }
+                    if !self.request.reasoning_effort.is_empty() {
+                        params["config"]["model_reasoning_effort"] =
+                            json!(self.request.reasoning_effort);
+                    }
                     if !self.request.model.trim().is_empty() {
                         params["model"] = json!(self.request.model);
                     }
@@ -1095,6 +1129,9 @@ impl Session {
                         input.push(json!({"type":"image","url":image}));
                     }
                     let mut turn = json!({"threadId":thread_id,"input":input});
+                    if !self.request.reasoning_effort.is_empty() {
+                        turn["effort"] = json!(self.request.reasoning_effort);
+                    }
                     if self.request.restricted {
                         turn["environments"] = json!([]);
                     }

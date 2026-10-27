@@ -2,9 +2,11 @@
 
 mod backend;
 mod companion;
+mod growth;
 mod motion;
 mod observer;
 mod service;
+mod utilities;
 mod windows;
 
 use backend::{StartRequest, TaskManager, TaskView};
@@ -117,16 +119,29 @@ fn panel_only(window: &WebviewWindow) -> Result<(), String> {
         Err("请从任务窗口执行此操作".into())
     }
 }
+async fn confirm_permission(app: tauri::AppHandle, old: &str, new: &str) -> Result<(), String> {
+    if new == "danger-full-access" && old != "danger-full-access" {
+        let allowed=tauri::async_runtime::spawn_blocking(move||app.dialog().message("完全访问会允许任务读写工作目录以外的文件并运行命令。只应为你信任的任务开启。是否继续？").title("启用完全访问").kind(tauri_plugin_dialog::MessageDialogKind::Warning).buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancel).blocking_show()).await.map_err(|e|e.to_string())?;
+        if !allowed {
+            return Err("已取消权限变更".into());
+        }
+    }
+    Ok(())
+}
 #[tauri::command]
-fn save_settings(
+async fn save_settings(
     window: WebviewWindow,
-    state: tauri::State<State>,
+    state: tauri::State<'_, State>,
     settings: Settings,
 ) -> Result<(), String> {
     panel_only(&window)?;
-    if !["read-only", "workspace-write"].contains(&settings.permission.as_str()) {
+    if !["read-only", "workspace-write", "danger-full-access"]
+        .contains(&settings.permission.as_str())
+    {
         return Err("无效的权限选项".into());
     }
+    let previous = state.settings.lock().unwrap().permission.clone();
+    confirm_permission(window.app_handle().clone(), &previous, &settings.permission).await?;
     let bytes = serde_json::to_vec_pretty(&settings).map_err(|e| e.to_string())?;
     let temporary = state.settings_path.with_extension("tmp");
     std::fs::write(&temporary, bytes).map_err(|e| e.to_string())?;
@@ -166,9 +181,33 @@ async fn choose_workspace(
 fn task_start(
     window: WebviewWindow,
     state: tauri::State<State>,
-    request: StartRequest,
+    mut request: StartRequest,
 ) -> Result<TaskView, String> {
     panel_only(&window)?;
+    if request.permission == "danger-full-access"
+        && state.settings.lock().unwrap().permission != "danger-full-access"
+    {
+        return Err("请先在设置中确认完全访问权限".into());
+    }
+    let data = state.service.data.snapshot();
+    request.backend = data["settings"]["backend"]
+        .as_str()
+        .unwrap_or("codex")
+        .into();
+    request.reasoning_effort = data["settings"]["codexEffort"]
+        .as_str()
+        .unwrap_or("")
+        .into();
+    request.backend_settings = json!({});
+    for key in [
+        "dshExe",
+        "sourceProfile",
+        "provider",
+        "model",
+        "reasoningEffort",
+    ] {
+        request.backend_settings[key] = data["settings"][key].clone();
+    }
     state.tasks.start(request)
 }
 #[tauri::command]
@@ -207,6 +246,15 @@ fn task_answer(
     state.tasks.answer(id, request_id, answers)
 }
 
+#[tauri::command]
+fn note_show(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("note") {
+        if w.is_visible().map_err(|e| e.to_string())? {
+            return Ok(());
+        }
+    }
+    note_toggle(app)
+}
 #[tauri::command]
 fn note_toggle(app: tauri::AppHandle) -> Result<(), String> {
     let state = app.state::<State>();
@@ -281,9 +329,9 @@ fn note_add(
     state.service.apply("todo:add", json!({"text":text}))
 }
 #[tauri::command]
-fn companion_command(
+async fn companion_command(
     window: WebviewWindow,
-    state: tauri::State<State>,
+    state: tauri::State<'_, State>,
     command: String,
     args: Value,
 ) -> Result<Value, String> {
@@ -295,7 +343,20 @@ fn companion_command(
     {
         return Err("请从控制面板执行此操作".into());
     }
-    let result = state.service.apply(&command, args)?;
+    if command == "settings:set" {
+        if let Some(permission) = args["permission"].as_str() {
+            let previous = state.service.data.snapshot()["settings"]["permission"]
+                .as_str()
+                .unwrap_or("read-only")
+                .to_string();
+            confirm_permission(window.app_handle().clone(), &previous, permission).await?;
+        }
+    }
+    let service = state.service.clone();
+    let operation = command.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || service.apply(&operation, args))
+        .await
+        .map_err(|e| e.to_string())??;
     if command == "settings:set" {
         let d = state.service.data.snapshot();
         let s = &d["settings"];
@@ -319,6 +380,11 @@ async fn observer_windows(window: WebviewWindow) -> Result<Vec<Value>, String> {
     tauri::async_runtime::spawn_blocking(observer::choices)
         .await
         .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+fn observer_status(window: WebviewWindow) -> Result<bool, String> {
+    panel_only(&window)?;
+    Ok(observer::permission())
 }
 #[tauri::command]
 fn observer_permission(window: WebviewWindow) -> Result<bool, String> {
@@ -771,37 +837,49 @@ fn main() {
             );
             let legacy = app
                 .path()
-                .data_dir()?
-                .join(if cfg!(target_os = "macos") {
-                    "claude-ojousama"
-                } else {
-                    "claude-ojousama"
-                })
+                .config_dir()?
+                .join("claude-ojousama")
                 .join("pet-data.json");
             let companion =
                 companion::Companion::open(data_dir.join("pet-data.json"), Some(&legacy))?;
             // Preserve prototype connection choices while importing the full companion data.
             let prototype_settings = settings.clone();
             if !data_dir.join("companion-migrated").exists() {
+                let has_legacy = legacy.is_file();
+                let has_prototype = data_dir.join("settings.json").is_file();
                 companion.change(|d| {
-                    if !prototype_settings.workspace.is_empty() {
+                    if !has_legacy && has_prototype {
+                        d["settings"]["backend"] = json!("codex");
                         d["settings"]["cwd"] = json!(prototype_settings.workspace);
-                    }
-                    if !prototype_settings.codex_path.is_empty() {
+                        d["settings"]["permission"] = json!(prototype_settings.permission);
                         d["settings"]["codexExe"] = json!(prototype_settings.codex_path);
-                    }
-                    if !prototype_settings.model.is_empty() {
                         d["settings"]["codexModel"] = json!(prototype_settings.model);
+                    } else if d["settings"]["codexExe"].as_str().is_none_or(str::is_empty)
+                        && !prototype_settings.codex_path.is_empty()
+                    {
+                        d["settings"]["codexExe"] = json!(prototype_settings.codex_path);
                     }
                     Ok(())
                 })?;
                 std::fs::write(data_dir.join("companion-migrated"), b"1")?;
             }
+            let effective = companion.snapshot();
+            let effective = &effective["settings"];
+            let settings = Settings {
+                workspace: effective["cwd"].as_str().unwrap_or("").into(),
+                codex_path: effective["codexExe"].as_str().unwrap_or("").into(),
+                permission: effective["permission"]
+                    .as_str()
+                    .unwrap_or("read-only")
+                    .into(),
+                model: effective["codexModel"].as_str().unwrap_or("").into(),
+            };
             let handle = app.handle().clone();
             let service = service::Service::new(
                 companion,
                 tasks.clone(),
                 data_dir.join("observer-workspace"),
+                app.path().document_dir()?,
                 Arc::new(move |name, payload| {
                     let _ = handle.emit(name, payload);
                 }),
@@ -865,6 +943,9 @@ fn main() {
                     }
                 }
             });
+            if app.state::<State>().service.data.snapshot()["note"]["open"] == true {
+                note_show(app.handle().clone())?;
+            }
             if positionable {
                 start_motion(pet, motion, regions, stop);
             }
@@ -890,8 +971,10 @@ fn main() {
             perch_toggle,
             companion_command,
             observer_windows,
+            observer_status,
             observer_permission,
             look_now,
+            note_show,
             note_toggle,
             note_update,
             note_add

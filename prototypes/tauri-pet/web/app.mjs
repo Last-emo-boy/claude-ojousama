@@ -59,8 +59,9 @@ function renderStatus(node, task) {
 }
 
 function acceptTask(task, { select = false, snapshot = false } = {}) {
+  const isNew = !state.tasks.some(item => item.id === task.id)
   state.tasks = upsertTask(state.tasks, task, { snapshot })
-  if (select || state.selected === null) state.selected = task.id
+  if (select || isNew || state.selected === null) state.selected = task.id
   render()
   companionPanel?.taskUpdated(state.tasks)
 }
@@ -210,6 +211,12 @@ function drawSprite() {
   const y = CANVAS_SIZE - sheet.h * SPRITE_SCALE
   spriteContext.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
   spriteContext.drawImage(sheet.image, frame * sheet.w, 0, sheet.w, sheet.h, x, y, sheet.w * SPRITE_SCALE, sheet.h * SPRITE_SCALE)
+  if(name==='sign' && sheet.boards && companionBubble?.text){
+    const b=sheet.boards[frame]||sheet.boards[0], text=companionBubble.text.slice(0,6)
+    spriteContext.save();spriteContext.fillStyle='#64452e';spriteContext.textAlign='center';spriteContext.textBaseline='middle'
+    let size=13;do{spriteContext.font=`600 ${size}px sans-serif`;size-=.5}while(size>6&&spriteContext.measureText(text).width>(b.w-4)*SPRITE_SCALE)
+    spriteContext.fillText(text,x+(b.x+b.w/2)*SPRITE_SCALE,y+(b.y+b.h/2)*SPRITE_SCALE);spriteContext.restore()
+  }
   const bounds = $('sprite').getBoundingClientRect()
   spriteBands = placeBands(sheet.bands[frame], { x: bounds.x + x, y: bounds.y + y }, SPRITE_SCALE)
   sendHitRegions()
@@ -269,7 +276,7 @@ function mountPanel() {
         <button id="choose-workspace" type="button">选择</button>
       </div>
       <div class="compose-footer">
-        <label class="permission-control" for="permission">权限<select id="permission"><option value="read-only">只读</option><option value="workspace-write">工作区可写</option></select></label>
+        <label class="permission-control" for="permission">权限<select id="permission"><option value="read-only">只读</option><option value="workspace-write">工作区可写</option><option value="danger-full-access">完全访问（谨慎）</option></select></label>
         <button id="start-task" class="primary" type="submit">开始任务 ↗</button>
       </div>
       <p id="form-error" class="error form-error" role="alert"></p>
@@ -391,7 +398,7 @@ function renderPanel() {
   $('task-detail').classList.toggle('hidden', !selected)
   if (!selected) return
   $('detail-title').textContent = selected.prompt
-  $('detail-meta').textContent = `${timeLabel(selected.createdAt)} · ${selected.permission === 'workspace-write' ? '工作区可写' : '只读'} · ${selected.workspace}`
+  $('detail-meta').textContent = `${timeLabel(selected.createdAt)} · ${({'read-only':'只读','workspace-write':'工作区可写','danger-full-access':'完全访问'})[selected.permission] || selected.permission} · ${selected.workspace}`
   $('detail-activity').textContent = `${presentation(selected).label}${selected.activity ? ` · ${selected.activity}` : ''}`
   $('detail-stop').classList.toggle('hidden', !isActive(selected))
   $('detail-retry').classList.toggle('hidden', isActive(selected))
@@ -534,9 +541,10 @@ async function boot() {
   state.platform = initial.platform
   state.motion = initial.motion || state.motion
   if (view === 'panel' && initial.companion) {
-    companionPanel = mountCompanion({invoke, initial: initial.companion, showError, onTasks: () => companionPanel.select('tasks')})
+    companionPanel = mountCompanion({invoke, initial: initial.companion, showError, platform:state.platform, onTasks: () => companionPanel.select('tasks')})
     await window.__TAURI__.event.listen('companion:update', event => companionPanel.update(event.payload))
   } else if (view === 'pet') {
+    await window.__TAURI__.event.listen('companion:action', event => {if(event.payload.kind==='note.show')invoke('note_show').catch(showError)})
     await window.__TAURI__.event.listen('companion:bubble', event => {
       companionBubble = event.payload
       renderPet()

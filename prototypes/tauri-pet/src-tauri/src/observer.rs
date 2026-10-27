@@ -199,6 +199,21 @@ pub fn choices() -> Result<Vec<Value>, String> {
     }
     Ok(result)
 }
+pub fn foreground_allowed(extra: &str) -> bool {
+    let Ok(windows) = native_windows() else {
+        return false;
+    };
+    windows
+        .into_iter()
+        .find(|w| w.is_focused().ok() == Some(true))
+        .is_some_and(|w| {
+            w.pid().ok() != Some(std::process::id())
+                && w.app_name()
+                    .ok()
+                    .zip(w.title().ok())
+                    .is_some_and(|(app, title)| !blocked(&app, &title, extra))
+        })
+}
 pub struct Capture {
     pub image: String,
     pub app: String,

@@ -1,4 +1,4 @@
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Read, Write};
 use std::{env, thread, time::Duration};
 fn emit(line: &str) {
     println!("{line}");
@@ -14,6 +14,14 @@ fn complete(text: &str) {
 }
 fn main() {
     let scenario = env::args().nth(1).unwrap();
+    if scenario.starts_with("dsh-") {
+        let mut prompt=String::new();io::stdin().read_to_string(&mut prompt).unwrap();
+        if scenario=="dsh-hang"{loop{thread::sleep(Duration::from_secs(60));}}
+        emit(r#"{"type":"session","sessionId":"dsh-fixture-session"}"#);
+        emit(r#"{"type":"text","text":"DSH_"}"#);
+        emit(r#"{"type":"final","text":"DSH_OK"}"#);
+        return;
+    }
     if scenario == "descendant" {
         loop {
             thread::sleep(Duration::from_secs(60));

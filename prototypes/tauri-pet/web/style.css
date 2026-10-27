@@ -158,3 +158,5 @@ details.settings summary { cursor: pointer; width: fit-content; }
 .goal-log { flex-basis: 100%; font-size: 13px; color: var(--muted); }
 #look-controls p { line-height: 1.7; }
 #look-window { flex: 1; min-width: 80px; }
+
+#panel-error { position: sticky; top: 8px; z-index: 2; background: #fff4ee; border-radius: 8px; padding: 10px 13px; }

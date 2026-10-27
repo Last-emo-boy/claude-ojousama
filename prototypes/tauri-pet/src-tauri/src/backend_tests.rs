@@ -248,7 +248,7 @@ fn interrupted_history_recovers_without_restarting_process() {
 #[test]
 fn validates_workspace_permission_prompt_and_preserves_bad_history() {
     let (manager, mut request, dir, _) = setup("success");
-    request.permission = "danger-full-access".into();
+    request.permission = "unknown-permission".into();
     assert!(manager.start(request.clone()).is_err());
     request.permission = "read-only".into();
     request.workspace = dir.join("missing").to_string_lossy().into_owned();
@@ -349,5 +349,41 @@ fn ephemeral_manager_does_not_create_a_journal() {
     manager.start(request).unwrap();
     wait(&manager, |v| terminal(&v.status));
     assert!(!dir.join("history.json").exists());
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn dsh_stream_is_drained_before_finish_and_keeps_its_session_namespace() {
+    let (manager, mut request, dir, _) = setup("dsh-success");
+    request.backend = "dsh".into();
+    request.dsh_test_home = Some(dir.clone());
+    manager.start(request).unwrap();
+    let result = wait(&manager, |v| terminal(&v.status));
+    assert_eq!(result.status, "completed");
+    assert_eq!(result.output, "DSH_OK");
+    assert_eq!(result.thread_id.as_deref(), Some("dsh-fixture-session"));
+    fs::remove_dir_all(dir).unwrap();
+}
+#[test]
+fn dsh_cancellation_reaps_its_owned_host() {
+    let (manager, mut request, dir, _) = setup("dsh-hang");
+    request.backend = "dsh".into();
+    request.dsh_test_home = Some(dir.clone());
+    let task = manager.start(request).unwrap();
+    manager.cancel(task.id).unwrap();
+    let result = wait(&manager, |v| terminal(&v.status));
+    assert_eq!(result.status, "cancelled");
+    manager.shutdown();
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn legacy_full_access_is_preserved_for_explicit_interactive_tasks() {
+    let (manager, mut request, dir, _) = setup("success");
+    request.permission = "danger-full-access".into();
+    manager.start(request).unwrap();
+    let done = wait(&manager, |v| terminal(&v.status));
+    assert_eq!(done.status, "completed");
+    assert_eq!(done.permission, "danger-full-access");
     fs::remove_dir_all(dir).unwrap();
 }
