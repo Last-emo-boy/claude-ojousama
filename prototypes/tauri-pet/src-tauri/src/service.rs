@@ -311,6 +311,16 @@ impl Service {
             if r.job.is_some() || r.preparing {
                 return Err("已经在思考一件事了".into());
             }
+            if !manual
+                && r.pending_ambient
+                    .as_ref()
+                    .is_some_and(|(_, _, expires)| *expires > now)
+            {
+                return Ok(());
+            }
+            if manual {
+                r.pending_ambient = None;
+            }
             let last_look = r.last_look;
             if !manual && !eligible(&d, now, &mut r.looks, last_look) {
                 return Ok(());
@@ -552,6 +562,7 @@ impl Service {
         let mut r = self.runtime.lock().unwrap();
         if let Some((line, epoch, expires)) = r.pending_ambient.take() {
             if epoch == r.epoch && expires > companion::now() {
+                r.last_line = line.clone();
                 drop(r);
                 self.say(&line, "wave");
             }
@@ -578,7 +589,6 @@ impl Service {
                     if kind == "look" || kind == "manual-look" {
                         if let Some(line) = observer::one_line(&task.output) {
                             if line != r.last_line {
-                                r.last_line = line.clone();
                                 if kind == "look" {
                                     let epoch = r.epoch;
                                     r.pending_ambient = Some((line, epoch, now + 120_000));
@@ -586,6 +596,7 @@ impl Service {
                                     self.changed();
                                     return Ok(());
                                 }
+                                r.last_line = line.clone();
                                 drop(r);
                                 self.say(&line, "wave");
                                 self.changed();

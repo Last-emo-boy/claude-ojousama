@@ -90,6 +90,13 @@ impl Companion {
                     data["settings"]["permission"] = json!("workspace-write");
                 }
             }
+            let mut rules = defaults()["settings"]["rules"].clone();
+            if let Some(existing) = imported["settings"]["rules"].as_object() {
+                for (key, value) in existing {
+                    rules[key] = value.clone();
+                }
+            }
+            data["settings"]["rules"] = rules;
             if source != path {
                 fs::copy(source, path.with_extension("legacy-backup.json"))
                     .map_err(|e| e.to_string())?;
