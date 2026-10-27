@@ -83,6 +83,7 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   function render() {
     const d=current.data
     $('chat-send').disabled=!!current.chatTask; $('chat-stop').hidden=!current.chatTask
+    if(!current.chatTask){$('chat-live').textContent='';$('chat-pending').hidden=true}
     list('chat-messages',d.chat.messages.slice(-100),m=>text('div',m.text,`chat-message ${m.role}`))
     list('todo-list',d.todos,t=>{const n=row(t.text,t.done?'已完成':date(t.due));const check=document.createElement('input');check.type='checkbox';check.checked=!!t.done;check.setAttribute('aria-label',`完成 ${t.text}`);check.addEventListener('change',()=>call('todo:update',{id:t.id,patch:{done:check.checked}}).catch(showError));n.prepend(check);n.append(button('移除','todo:remove',{id:t.id}));return n})
     list('reminder-list',d.reminders.filter(r=>!r.fired),r=>{const n=row(r.text,date(r.at));n.append(button('移除','reminder:remove',{id:r.id}));return n})
