@@ -17,6 +17,7 @@ export const dateValue = value => value ? new Date(value).getTime() : null
 export function mountCompanion({invoke, initial, showError, onTasks, platform}) {
   let current = initial
   let tab = 'chat'
+  let motionValue = null
   const header = document.querySelector('.panel-header')
   const tasks = document.createElement('div'); tasks.id = 'view-tasks'
   const form = $('task-form'), result = document.querySelector('.tasks-section') || $('task-history').closest('section')
@@ -48,7 +49,7 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
       <h2>持续推进的目标</h2><form id="goal-form" class="stack-form"><input id="goal-title" aria-label="目标" required placeholder="想持续推进什么？"><textarea id="goal-detail" aria-label="目标标准" placeholder="做到什么程度，哪些事情需要先问你？"></textarea><div class="workspace-row"><select id="goal-every" aria-label="跟进频率"><option value="daily">每天</option><option value="3h">每 3 小时</option><option value="hourly">每小时</option></select><input id="goal-at" type="time" value="09:00" aria-label="每日跟进时间"><button class="primary">添加目标</button></div></form><div id="goal-list" class="item-list"></div>
     </section>
     <section id="view-growth" class="companion-view" hidden><h2 id="growth-level"></h2><h3>记住的事</h3><form id="memory-form" class="workspace-row"><input id="memory-text" aria-label="长期记忆" required placeholder="希望大小姐记住的偏好"><button>记住</button></form><div id="memory-list" class="item-list"></div><div class="quick-actions"><button id="growth-reflect">整理记忆与日记</button></div><h3>成长笔记</h3><div id="growth-notes"></div><h3>日记</h3><div id="growth-diary"></div></section>
-    <section id="view-actions" class="companion-view" hidden><div class="actions-intro"><h2>让她去转转。</h2><p>一个小动作，也是一点陪伴。</p></div><div class="new-actions"><div class="action-art" id="climb-preview" aria-hidden="true"></div><div class="action-art" id="ledge-preview" aria-hidden="true"></div><div><span class="eyebrow">新动作</span><h3>从窗口边上，爬到你身边。</h3><p>攀爬与翻上窗沿已经画好，可以先预览动作。</p></div></div><div id="action-gallery" class="action-gallery" aria-label="动作选择器"></div><p id="action-state" class="muted" role="status">选择一个动作，在桌宠上播放。不会弹出说话气泡。</p></section>
+    <section id="view-actions" class="companion-view" hidden><div class="actions-intro"><h2>让她去转转。</h2><p>一个小动作，也是一点陪伴。</p></div><div class="new-actions"><div class="action-art" id="climb-preview" aria-hidden="true"></div><div class="action-art" id="ledge-preview" aria-hidden="true"></div><div><span class="eyebrow">新动作</span><h3>从窗口边上，爬到你身边。</h3><p>沿着真实窗口的边缘走过去，再爬到窗沿坐下。</p></div></div><div class="desktop-activity"><h3>桌面活动</h3><div class="quick-actions"><button id="motion-walk" type="button">去走走</button><button id="motion-climb" type="button" class="primary">爬上窗口</button><button id="motion-stop" type="button">停步／下来</button><button id="motion-pause" type="button">暂停活动</button><button id="motion-resume" type="button">继续活动</button></div><div class="workspace-row"><select id="motion-screen" aria-label="目标显示器"></select><button id="motion-go" type="button">到这块屏幕</button><button id="motion-refresh" type="button">刷新</button></div><p id="motion-state" class="setting-help" role="status"></p><form id="motion-preferences" class="motion-preferences"><label class="check-row"><input id="motion-wander" type="checkbox">自主走动</label><label class="check-row"><input id="motion-windows" type="checkbox">自动爬窗</label><label class="check-row"><input id="motion-cross" type="checkbox">允许跨屏</label><label class="check-row"><input id="motion-fullscreen" type="checkbox">全屏时隐藏</label><button type="submit">保存偏好</button></form></div><h3>动作预览</h3><div id="action-gallery" class="action-gallery" aria-label="动作选择器"></div><p id="action-state" class="muted" role="status">选择一个动作，在桌宠上播放。不会弹出说话气泡。</p></section>
     <section id="view-activity" class="companion-view" hidden><h2>桌宠自己做的事</h2><div class="quick-actions"><button id="agenda-brief">今日简报</button><button id="agenda-pulse">只读巡检</button><button id="agenda-tip">来个小技巧</button><button id="summary-now">今日小结</button></div><div id="background-tasks" class="item-list"></div><h2>最近的动态</h2><div id="activity-list" class="item-list"></div></section>
     <section id="view-settings" class="companion-view" hidden>
       <h2>安静地陪着你</h2>
@@ -72,7 +73,7 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   document.querySelector('#app').prepend(sidebar,main)
   main.append(header,$('panel-error'),host,tasks,document.querySelector('.panel-footnote'))
   const call = async (command,args={}) => {const result=await invoke('companion_command',{command,args});showError('');return result}
-  const bind = (id,work) => $(id).addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;try{await work()}catch(e){showError(e)}finally{button.disabled=false}})
+  const bind = (id,work) => $(id).addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;try{await work()}catch(e){showError(e)}finally{button.disabled=false;if(button.id.startsWith('motion-'))renderMotion()}})
   const submit=(id,work)=>$(id).addEventListener('submit',async e=>{e.preventDefault();const button=e.target.querySelector('button.primary,button:not([type="button"])');if(button)button.disabled=true;try{await work()}catch(error){showError(error)}finally{if(button)button.disabled=false}})
   submit('chat-form', async()=>{await call('chat:send',{text:$('chat-text').value.trim()});$('chat-text').value=''})
   bind('chat-stop',async()=>{if(current.chatTask)await invoke('task_cancel',{id:current.chatTask})})
@@ -83,6 +84,20 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   bind('look-now',async()=>{const id=Number($('look-window').value);if(!id)throw new Error('请先选择一个窗口');await invoke('look_now',{chosen:id});$('look-state').textContent='这次观察已开始，合适的内容会显示在桌宠气泡里。'})
   bind('note-open',()=>invoke('note_toggle'))
   bind('prank-dance',()=>call('prank',{name:'dance'}))
+  const motion = async(command,screen) => {await invoke('motion_command',{command,screen});if(['walk','climb','screen'].includes(command))await invoke('hide_panel');await refreshMotion()}
+  const refreshMotion = async() => {
+    motionValue=await invoke('motion_status')
+    $('motion-screen').replaceChildren(...motionValue.screens.map((s,i)=>{const option=text('option',`${i+1} · ${s.name}`);option.value=s.id;return option}))
+    if(motionValue.current)$('motion-screen').value=motionValue.current
+    for(const id of ['motion-walk','motion-climb','motion-stop','motion-go'])$(id).disabled=!motionValue.positionable
+    if(motionValue.screens.length<2)$('motion-go').disabled=true
+    renderMotion()
+  }
+  for(const [id,command]of [['motion-walk','walk'],['motion-climb','climb'],['motion-stop','stop'],['motion-pause','pause'],['motion-resume','resume']])bind(id,()=>motion(command))
+  bind('motion-refresh',refreshMotion);bind('motion-go',()=>motion('screen',$('motion-screen').value))
+  submit('motion-preferences',async()=>{await call('settings:set',{wander:$('motion-wander').checked,climbWindows:$('motion-windows').checked,crossScreens:$('motion-cross').checked,hideOnFullscreen:$('motion-fullscreen').checked});$('motion-state').textContent='桌面活动偏好已保存'})
+  function renderMotion(){if(!motionValue)return;const paused=current.data.settings.motionPausedUntil>Date.now();const m=motionValue.motion;for(const id of ['motion-walk','motion-climb','motion-go'])$(id).disabled=!motionValue.positionable||paused; $('motion-stop').disabled=!motionValue.positionable;if(motionValue.screens.length<2)$('motion-go').disabled=true;const labels={walking:'走路中',climbing:'攀爬中',hoisting:'正在翻上窗沿',descending:'正在下来',perched:'坐在窗口上',dragging:'跟着你走',flying:'落地中',settled:'安静陪着你'};$('motion-state').textContent=!motionValue.positionable?'当前 Wayland 桌面由系统管理位置；X11 或 XWayland 可使用自主移动。':paused?'桌面活动已暂停 1 小时，可随时继续。':m.paused?({starting:'正在恢复桌面活动…',locked:'屏幕锁定时暂停活动。',fullscreen:'全屏应用中暂停活动。',task:'任务结束后继续活动。',panel:'收起控制面板后继续活动。',quiet:'安静时段内暂停自主活动。',disabled:'自主走动已关闭。',focus:'专注结束后继续活动。',away:'等你回来再继续活动。',hover:'鼠标移开后继续，拖动可打断。',display:'等待显示器就绪。'})[m.pauseReason]||'桌面活动已暂停。':labels[m.phase]||'安静陪着你';$('motion-pause').hidden=paused;$('motion-resume').hidden=!paused}
+
   const play=async(name,label)=>{await call('prank',{name});$('action-state').textContent=`正在桌宠上播放：${label}`}
   for(const [name,label,description]of ACTIONS){const b=document.createElement('button');b.type='button';b.className='action-tile';b.setAttribute('aria-label',`播放${label}`);const preview=document.createElement('span');preview.className='action-art';preview.dataset.sprite=name;preview.setAttribute('aria-hidden','true');b.append(preview,text('span',label));if(description)b.append(text('small',description));b.addEventListener('click',async()=>{b.disabled=true;try{await play(name,label)}catch(e){showError(e)}finally{b.disabled=false}});$('action-gallery').append(b)}
   fetch('./assets/sprites/manifest.json').then(r=>{if(!r.ok)throw new Error('动作资源不可用');return r.json()}).then(manifest=>{for(const node of [...document.querySelectorAll('[data-sprite]'),$('climb-preview'),$('ledge-preview')]){const name=node.dataset.sprite||node.id.replace('-preview','');const a=manifest.anims[name];if(!a)throw new Error(`缺少动作：${name}`);const h=node.closest('.new-actions')?132:78;const w=h*a.w/a.h;node.style.width=`${w}px`;node.style.height=`${h}px`;node.style.backgroundImage=`url('./assets/sprites/${a.file}')`;node.style.backgroundSize=`${w*a.frames}px ${h}px`;if(name==='ledge'&&node.id)node.style.backgroundPosition=`-${w*3}px 0`}}).catch(showError)
@@ -108,6 +123,7 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   function row(title,meta=''){const n=text('div','', 'companion-item');const body=text('div','');body.append(text('p',title),text('small',meta));n.append(body);return n}
   function render() {
     const d=current.data
+    renderMotion()
     $('chat-welcome').hidden=d.chat.messages.length>0
     $('chat-send').disabled=!!current.chatTask; $('chat-stop').hidden=!current.chatTask
     if(!current.chatTask){$('chat-live').textContent='';$('chat-pending').hidden=true}
@@ -136,10 +152,11 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   }
   function fill() {const d=current.data,s=d.settings,o=d.observation
     $('weather-city').value=s.weatherCity||''
+    for(const [id,key]of [['motion-wander','wander'],['motion-windows','climbWindows'],['motion-cross','crossScreens'],['motion-fullscreen','hideOnFullscreen']])$(id).checked=s[key]!==false
     $('observe-enabled').checked=!!o.enabled;$('observe-consent').checked=o.consentVersion===1;$('observe-interval').value=o.intervalSeconds;$('observe-max').value=o.maxPerHour;$('observe-exclude').value=o.excludeApps
     for(const [id,key]of [['companion-backend','backend'],['companion-dsh','dshExe'],['companion-profile','sourceProfile'],['companion-provider','provider'],['companion-dsh-model','model'],['companion-codex','codexExe'],['companion-model','codexModel'],['companion-glance-model','codexGlanceModel'],['companion-cwd','cwd'],['companion-permission','permission'],['quiet-start','quietStart'],['quiet-end','quietEnd']])$(id).value=s[key]||''
   }
-  function select(name) {if(!tabs.some(([n])=>n===name))return;tab=name;for(const [n]of tabs){const node=$(`view-${n}`);node.hidden=n!==name;nav.querySelector(`[data-tab="${n}"]`).setAttribute('aria-current',String(n===name))}const label=tabs.find(([n])=>n===name)[1];$('companion-title').textContent=name==='chat'?'今天也一起。':label;$('companion-subtitle').textContent=name==='chat'?`${current.data.settings.backend==='dsh'?'DeepSeek Harness':'Codex'} · 随时聊聊`:name==='actions'?'随心动一动，安静陪着你。':'Claude Ojousama';if(name==='settings'){fill();invoke('observer_status').then(permission=>{current.observer.permission=permission;render()}).catch(showError)}render()}
+  function select(name) {if(!tabs.some(([n])=>n===name))return;tab=name;for(const [n]of tabs){const node=$(`view-${n}`);node.hidden=n!==name;nav.querySelector(`[data-tab="${n}"]`).setAttribute('aria-current',String(n===name))}const label=tabs.find(([n])=>n===name)[1];$('companion-title').textContent=name==='chat'?'今天也一起。':label;$('companion-subtitle').textContent=name==='chat'?`${current.data.settings.backend==='dsh'?'DeepSeek Harness':'Codex'} · 随时聊聊`:name==='actions'?'随心动一动，安静陪着你。':'Claude Ojousama';if(name==='actions'){fill();refreshMotion().catch(showError)}if(name==='settings'){fill();invoke('observer_status').then(permission=>{current.observer.permission=permission;render()}).catch(showError)}render()}
   fill();select(tab)
-  return { update(value){current=value;render()}, select, taskUpdated(tasks){const task=tasks.find(t=>t.id===current.chatTask);$('chat-live').textContent=task ? task.output||task.activity : ''; $('chat-send').disabled=!!current.chatTask; $('chat-stop').hidden=!current.chatTask; $('chat-pending').hidden=!task?.pending} }
+  return { motionUpdated(value){if(motionValue){motionValue.motion=value;renderMotion()}}, update(value){current=value;render()}, select, taskUpdated(tasks){const task=tasks.find(t=>t.id===current.chatTask);$('chat-live').textContent=task ? task.output||task.activity : ''; $('chat-send').disabled=!!current.chatTask; $('chat-stop').hidden=!current.chatTask; $('chat-pending').hidden=!task?.pending} }
 }

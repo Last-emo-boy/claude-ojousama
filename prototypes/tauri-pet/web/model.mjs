@@ -36,10 +36,14 @@ export function presentation(task, motion = 'settled') {
   const [label, animation, fallback] = STATUS[task?.status] || ['待命', 'idle', '有事叫我']
   return {
     label,
-    animation: motion === 'dragging' || motion === 'flying' ? 'dangle' : motion === 'perched' ? 'sit' : animation,
+    animation: ({dragging:'dangle',flying:'dangle',descending:'dangle',walking:'walk',climbing:'climb',hoisting:'ledge',perched:'sit'})[motion] || animation,
     text: task?.status === 'failed' ? task.error || fallback : task?.activity || fallback,
     active: isActive(task),
   }
+}
+
+export function mirrorBands(bands, width) {
+  return bands.map(band => ({ ...band, x: width - band.x - band.width }))
 }
 
 export function settingsFrom(value = {}) {

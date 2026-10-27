@@ -13,6 +13,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; }
 button, input, textarea, select { font: inherit; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .48; }
 button, input, textarea, select { outline-offset: 3px; }
@@ -190,6 +191,12 @@ details.settings summary { cursor: pointer; width: fit-content; }
 .action-tile { border-color: transparent; background: #f6f2eb; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 13px 6px; font-size: 12px; }
 .action-art { display: block; background-repeat: no-repeat; image-rendering: pixelated; flex-shrink: 0; }
 .action-tile small { font-size: 10px; color: var(--muted); }
+.desktop-activity { padding: 0 0 22px; border-bottom: 1px solid var(--line); margin-bottom: 24px; }
+.desktop-activity h3 { margin-top: 0; }
+.desktop-activity .workspace-row select { flex: 1; min-width: 0; }
+.desktop-activity .quick-actions button { font-size: 12px; padding: 7px 10px; }
+.motion-preferences { display: flex; flex-wrap: wrap; align-items: center; gap: 13px 18px; margin-top: 18px; font-size: 12px; color: var(--muted); }
+.motion-preferences button { margin-left: auto; font-size: 12px; padding: 6px 10px; }
 #action-state { font-size: 12px; line-height: 1.7; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (max-width: 680px) {

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isActive, orderedTasks, upsertTask, currentTask, selectedTask, presentation, settingsFrom, pendingKey, alphaBands, placeBands } from './model.mjs'
+import { isActive, orderedTasks, upsertTask, currentTask, selectedTask, presentation, settingsFrom, pendingKey, alphaBands, placeBands, mirrorBands } from './model.mjs'
 import { createDragQueue } from './drag.mjs'
 
 const task = (id, status = 'completed', createdAt = id) => ({ id, status, createdAt, activity: '', error: null })
@@ -87,6 +87,20 @@ test('failure exposes real error and unknown states never imply success', () => 
   assert.equal(presentation({ ...task(1, 'failed'), error: 'CLI not found' }).text, 'CLI not found')
   assert.equal(presentation(task(1, 'unknown')).label, '待命')
   assert.equal(presentation(null).animation, 'idle')
+})
+
+test('native movement selects the connected walking, climbing and pull-up poses', () => {
+  for(const [phase,animation] of [['walking','walk'],['climbing','climb'],['hoisting','ledge'],['descending','dangle'],['perched','sit']]) {
+    assert.equal(presentation(task(1,'working'),phase).animation,animation)
+    assert.equal(presentation(task(1,'working'),phase).active,true)
+  }
+})
+
+test('mirrored characters keep click-through bands aligned and do not mutate their source', () => {
+  const bands=[{x:20,y:5,width:30,height:6}]
+  assert.deepEqual(mirrorBands(bands,180),[{x:130,y:5,width:30,height:6}])
+  assert.equal(bands[0].x,20)
+  assert.deepEqual(mirrorBands(mirrorBands(bands,180),180),bands)
 })
 
 test('settings preserve legacy full access, supported policies and the read-only default', () => {

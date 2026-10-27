@@ -1,4 +1,4 @@
-import { isActive, orderedTasks, upsertTask, currentTask, selectedTask, presentation, settingsFrom, pendingKey, alphaBands, placeBands } from './model.mjs'
+import { isActive, orderedTasks, upsertTask, currentTask, selectedTask, presentation, settingsFrom, pendingKey, alphaBands, placeBands, mirrorBands } from './model.mjs'
 import { createDragQueue } from './drag.mjs'
 import { mountCompanion } from './companion.mjs'
 import { createBubbleState } from './bubble.mjs'
@@ -99,7 +99,7 @@ function mountPet() {
         <button id="pet-open" type="button">新任务</button>
       </div>
     </section>
-    <div id="pet-menu" class="pet-menu" role="menu" aria-label="桌宠操作" hidden><button id="pet-menu-chat" type="button" role="menuitem">聊聊今天 ↗</button><button id="pet-perch" type="button" role="menuitem">坐上窗口</button><button id="pet-menu-actions" type="button" role="menuitem">选个动作</button><button id="pet-menu-quiet" type="button" role="menuitem">安静一小时</button></div>
+    <div id="pet-menu" class="pet-menu" role="menu" aria-label="桌宠操作" hidden><button id="pet-menu-chat" type="button" role="menuitem">聊聊今天 ↗</button><button id="pet-perch" type="button" role="menuitem">爬上窗口</button><button id="pet-menu-walk" type="button" role="menuitem">去走走</button><button id="pet-menu-stop" type="button" role="menuitem">停步／下来</button><button id="pet-menu-actions" type="button" role="menuitem">选个动作</button><button id="pet-menu-quiet" type="button" role="menuitem">安静一小时</button></div>
     <canvas id="sprite" role="button" tabindex="0" aria-haspopup="menu" aria-expanded="false" aria-label="桌宠，点击聊天，右键更多操作，拖动后松手抛出"></canvas>`
   const canvas = $('sprite')
   const ratio = devicePixelRatio || 1
@@ -110,10 +110,11 @@ function mountPet() {
   spriteContext.imageSmoothingEnabled = false
   $('pet-open').addEventListener('click', event => action(event.currentTarget, () => invoke('show_panel')))
   $('pet-dismiss').addEventListener('click', () => { bubbles.dismiss(); renderPet() })
-  const menu = visible => { $('pet-menu').hidden = !visible; canvas.setAttribute('aria-expanded', String(visible)); sendHitRegions() }
+  const menu = visible => { $('pet-menu').hidden = !visible; canvas.setAttribute('aria-expanded', String(visible)); renderPet() }
   $('pet-menu-chat').addEventListener('click', () => { menu(false); invoke('show_panel').catch(showError) })
   $('pet-menu-actions').addEventListener('click', () => { menu(false); invoke('show_panel', { tab: 'actions' }).catch(showError) })
-  $('pet-menu-quiet').addEventListener('click', event => action(event.currentTarget, async () => { await invoke('companion_command', { command: 'screen:pause', args: { minutes: 60 } }); menu(false) }))
+  $('pet-menu-quiet').addEventListener('click', event => action(event.currentTarget, async () => { await invoke('companion_command', { command: 'screen:pause', args: { minutes: 60 } }); await invoke('motion_command',{command:'pause'}); menu(false) }))
+  for(const [id,command]of [['pet-menu-walk','walk'],['pet-menu-stop','stop']])$(id).addEventListener('click',event=>action(event.currentTarget,async()=>{await invoke('motion_command',{command});menu(false)}))
   $('pet-perch').addEventListener('click', event => action(event.currentTarget, async () => {
     await invoke('perch_toggle')
     menu(false)
@@ -178,7 +179,11 @@ function mountPet() {
   canvas.addEventListener('pointercancel', release)
   const resize = new ResizeObserver(() => sendHitRegions())
   resize.observe($('pet-bubble')); resize.observe($('pet-menu'))
-  window.addEventListener('resize', sendHitRegions)
+  window.addEventListener('resize', () => {
+    const ratio=devicePixelRatio||1
+    if(canvas.width!==CANVAS_SIZE*ratio){canvas.width=CANVAS_SIZE*ratio;canvas.height=CANVAS_SIZE*ratio;spriteContext.setTransform(ratio,0,0,ratio,0,0);spriteContext.imageSmoothingEnabled=false;drawSprite()}
+    sendHitRegions()
+  })
   document.addEventListener('visibilitychange', () => {
     clearTimeout(animationTimer)
     if (!document.hidden) drawSprite()
@@ -230,19 +235,25 @@ function drawSprite() {
   const frame = reduceMotion.matches ? 0 : sheet.loop === false ? Math.min(animationFrame, sheet.frames - 1) : animationFrame % sheet.frames
   const scale = sheet.displayHeight ? sheet.displayHeight / sheet.h : SPRITE_SCALE
   const x = (CANVAS_SIZE - sheet.w * scale) / 2
-  const y = CANVAS_SIZE - sheet.h * scale + (sheet.offsetY || 0)
+  const y = CANVAS_SIZE - sheet.h * scale + (sheet.offsetsY?.[frame] ?? sheet.offsetY ?? 0)
   spriteContext.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
+  const mirrored=state.motion.facing<0
+  spriteContext.save()
+  if(mirrored){spriteContext.translate(CANVAS_SIZE,0);spriteContext.scale(-1,1)}
   spriteContext.drawImage(sheet.image, frame * sheet.w, 0, sheet.w, sheet.h, x, y, sheet.w * scale, sheet.h * scale)
+  spriteContext.restore()
   if(name==='sign' && sheet.boards && companionBubble?.text){
     const b=sheet.boards[frame]||sheet.boards[0], text=companionBubble.text.slice(0,6)
     spriteContext.save();spriteContext.fillStyle='#64452e';spriteContext.textAlign='center';spriteContext.textBaseline='middle'
     let size=13;do{spriteContext.font=`600 ${size}px sans-serif`;size-=.5}while(size>6&&spriteContext.measureText(text).width>(b.w-4)*SPRITE_SCALE)
-    spriteContext.fillText(text,x+(b.x+b.w/2)*SPRITE_SCALE,y+(b.y+b.h/2)*SPRITE_SCALE);spriteContext.restore()
+    const centre=x+(b.x+b.w/2)*SPRITE_SCALE
+    spriteContext.fillText(text,mirrored?CANVAS_SIZE-centre:centre,y+(b.y+b.h/2)*SPRITE_SCALE);spriteContext.restore()
   }
   const bounds = $('sprite').getBoundingClientRect()
-  spriteBands = placeBands(sheet.bands[frame], { x: bounds.x + x, y: bounds.y + y }, scale)
+  const bands=placeBands(sheet.bands[frame],{x,y},scale)
+  spriteBands = (mirrored?mirrorBands(bands,CANVAS_SIZE):bands).map(b=>({...b,x:b.x+bounds.x,y:b.y+bounds.y}))
   sendHitRegions()
-  if (!reduceMotion.matches && (sheet.loop !== false || animationFrame < sheet.frames - 1)) {
+  if (!reduceMotion.matches && !state.motion.paused && (sheet.loop !== false || animationFrame < sheet.frames - 1)) {
     animationFrame++
     animationTimer = setTimeout(drawSprite, 1000 / sheet.fps)
   }
@@ -250,8 +261,8 @@ function drawSprite() {
 
 function spriteAnimation() {
   const task = currentTask(state.tasks)
-  const base = presentation(task, state.motion.phase)
-  if (['dragging','flying'].includes(state.motion.phase) || base.active) return base.animation
+  const base = presentation(task, state.motion.paused&&isActive(task)?'settled':state.motion.phase)
+  if (['dragging','flying','walking','climbing','hoisting','descending'].includes(state.motion.phase) || base.active) return base.animation
   if (companionBubble?.until > Date.now()) return companionBubble.animation || 'idle'
   if (state.motion.phase === 'perched') return 'sit'
   return bubbles.read()?.source === 'task' ? base.animation : 'idle'
@@ -279,7 +290,7 @@ function renderPet() {
   const task = currentTask(state.tasks)
   const info = presentation(task, state.motion.phase)
   const notice = bubbles.read()
-  $('pet-bubble').hidden = !notice
+  $('pet-bubble').hidden = !notice || !$('pet-menu').hidden
   renderStatus($('pet-status'), task)
   const companionSpeaking = companionBubble?.until > Date.now() && !info.active
   $('pet-message').textContent = notice?.source === 'error' ? '' : short(notice?.text, 105)
@@ -289,8 +300,10 @@ function renderPet() {
   $('pet-bubble').classList.toggle('has-error', notice?.source === 'error')
   $('pet-stop').classList.toggle('hidden', !notice?.active)
   $('pet-open').textContent = notice?.source === 'task' ? '查看任务' : '聊两句'
-  $('pet-perch').textContent = state.motion.phase === 'perched' ? '下来' : '坐上窗口'
+  $('pet-perch').textContent = state.motion.phase === 'perched' ? '下来' : '爬上窗口'
   $('pet-perch').classList.toggle('hidden', !state.positionable)
+  $('pet-menu-walk').classList.toggle('hidden',!state.positionable)
+  $('pet-menu-stop').classList.toggle('hidden',!state.positionable)
   $('sprite').classList.toggle('dragging', state.motion.phase === 'dragging')
   $('sprite').setAttribute('aria-label', state.positionable ? '桌宠，点击聊天，右键更多操作，拖动后松手抛出' : '桌宠，点击聊天，右键更多操作')
   if (activeAnimation !== spriteAnimation() || reduceMotion.matches) drawSprite()
@@ -564,8 +577,10 @@ async function boot() {
   if (view === 'pet') {
     await window.__TAURI__.event.listen('pet:error', event => showError(event.payload))
   await window.__TAURI__.event.listen('motion:update', event => {
+      if((event.payload.generation||0)<(state.motion.generation||0))return
       state.motion = event.payload
       renderPet()
+      drawSprite()
     })
     await loadSprites()
   }
@@ -582,6 +597,7 @@ async function boot() {
     companionPanel = mountCompanion({invoke, initial: initial.companion, showError, platform:state.platform, onTasks: () => companionPanel.select('tasks')})
     await window.__TAURI__.event.listen('companion:update', event => companionPanel.update(event.payload))
     await window.__TAURI__.event.listen('panel:tab', event => companionPanel.select(event.payload))
+    await window.__TAURI__.event.listen('motion:update',event=>companionPanel.motionUpdated(event.payload))
   } else if (view === 'pet') {
     await window.__TAURI__.event.listen('companion:action', event => {if(event.payload.kind==='note.show')invoke('note_show').catch(showError)})
     await window.__TAURI__.event.listen('companion:bubble', event => {

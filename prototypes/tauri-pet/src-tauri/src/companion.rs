@@ -26,6 +26,8 @@ pub fn defaults() -> Value {
     data["pendingActions"] = json!([]);
     data["backgroundTasks"] = json!([]);
     data["pomodoro"] = json!({"until":0,"minutes":25});
+    data["settings"]["crossScreens"] = json!(true);
+    data["settings"]["motionPausedUntil"] = json!(0);
     data
 }
 pub fn save(path: &Path, data: &Value) -> Result<(), String> {

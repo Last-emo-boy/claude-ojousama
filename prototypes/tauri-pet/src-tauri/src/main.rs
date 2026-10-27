@@ -2,6 +2,7 @@
 
 mod backend;
 mod companion;
+mod desktop;
 mod growth;
 mod motion;
 mod observer;
@@ -49,6 +50,38 @@ fn trace_motion(window: &WebviewWindow, motion: &Motion) {
     })();
     if let Err(error) = result {
         eprintln!("motion diagnostics: {error}");
+    }
+}
+
+fn trace_windows(
+    window: &WebviewWindow,
+    screens: &[desktop::Screen],
+    native: &[windows::WindowRect],
+    scale: f64,
+    position: Option<desktop::Point>,
+    size: desktop::Point,
+) {
+    if !std::env::args().any(|arg| arg == "--diagnostics") {
+        return;
+    }
+    let result = (|| -> Result<(), String> {
+        let area = position
+            .and_then(|p| {
+                desktop::nearest(screens, (p.0 + size.0 / 2.0, p.1 + size.1 - 5.0 * scale))
+            })
+            .map(|i| screens[i].work);
+        let value = json!({"scale":scale,"coordinateSpace":if cfg!(target_os="macos"){"logical-points"}else{"physical-pixels"},"ownPid":std::process::id(),"petPosition":position.map(|p|json!({"x":p.0,"y":p.1})),"area":area,"screens":screens,"windows":native});
+        let path = window
+            .app_handle()
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("windows.json");
+        std::fs::write(path, serde_json::to_vec(&value).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())
+    })();
+    if let Err(error) = result {
+        eprintln!("window diagnostics: {error}");
     }
 }
 
@@ -436,14 +469,22 @@ fn set_hit_regions(
     Ok(())
 }
 #[tauri::command]
-fn set_reduced_motion(state: tauri::State<State>, enabled: bool) {
-    let mut motion = state.motion.lock().unwrap();
-    motion.reduced = enabled;
-    if enabled && motion.phase == "flying" {
-        motion.phase = "settled".into();
-        motion.vx = 0.0;
-        motion.vy = 0.0;
+fn set_reduced_motion(
+    window: WebviewWindow,
+    state: tauri::State<State>,
+    enabled: bool,
+) -> Result<(), String> {
+    if window.label() != "pet" {
+        return Err("仅桌宠可设置动态效果".into());
     }
+    let snapshot = {
+        let mut motion = state.motion.lock().unwrap();
+        motion.reduce(enabled);
+        motion.clone()
+    };
+    window
+        .emit("motion:update", snapshot)
+        .map_err(|e| e.to_string())
 }
 #[tauri::command]
 fn drag_begin(
@@ -458,13 +499,19 @@ fn drag_begin(
     if !x.is_finite() || !y.is_finite() {
         return Err("无效的指针坐标".into());
     }
-    let position = window.outer_position().map_err(|e| e.to_string())?;
-    let scale = window.scale_factor().unwrap_or(1.0);
+    let position = desktop::position(&window)?;
+    let size = desktop::size(&window)?;
+    let scale = desktop::units(&window);
+    let cursor = if cfg!(target_os = "macos") {
+        (x, y)
+    } else {
+        desktop::cursor(&window).unwrap_or((x * scale, y * scale))
+    };
     let mut motion = state.motion.lock().unwrap();
-    motion.x = position.x as f64;
-    motion.y = position.y as f64;
-    motion.scale = scale;
-    motion.begin((x * scale, y * scale));
+    motion.x = position.0;
+    motion.y = position.1;
+    motion.rebase(size, scale);
+    motion.begin(cursor);
     let snapshot = motion.clone();
     drop(motion);
     trace_motion(&window, &snapshot);
@@ -485,16 +532,21 @@ fn drag_move(
     if !x.is_finite() || !y.is_finite() {
         return Err("无效的指针坐标".into());
     }
+    let scale = desktop::units(&window);
+    let cursor = if cfg!(target_os = "macos") {
+        (x, y)
+    } else {
+        desktop::cursor(&window).unwrap_or((x * scale, y * scale))
+    };
     let mut motion = state.motion.lock().unwrap();
     if motion.phase != "dragging" {
         return Ok(());
     }
     let dt = motion.last_sample.elapsed().as_secs_f64().clamp(0.001, 0.1);
-    let scale = motion.scale;
-    motion.drag((x * scale, y * scale), dt);
-    let position = PhysicalPosition::new(motion.x.round() as i32, motion.y.round() as i32);
+    motion.drag(cursor, dt);
+    let position = (motion.x, motion.y);
     drop(motion);
-    window.set_position(position).map_err(|e| e.to_string())
+    desktop::place(&window, position)
 }
 #[tauri::command]
 fn drag_end(window: WebviewWindow, state: tauri::State<State>) -> Result<(), String> {
@@ -508,90 +560,200 @@ fn drag_end(window: WebviewWindow, state: tauri::State<State>) -> Result<(), Str
         .map_err(|e| e.to_string())
 }
 
-fn window_seats(window: &WebviewWindow, scale: f64) -> Result<Vec<windows::Seat>, String> {
-    let monitor = window
-        .current_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or("没有可用的显示器")?;
-    let area = monitor.work_area();
-    let native = windows::visible(scale)?;
-    if std::env::args().any(|arg| arg == "--diagnostics") {
-        let path = window
-            .app_handle()
-            .path()
-            .app_data_dir()
-            .map_err(|e| e.to_string())?
-            .join("windows.json");
-        let value = json!({"scale":scale,"ownPid":std::process::id(),"petPosition":window.outer_position().ok(),"area": {"x":area.position.x,"y":area.position.y,"width":area.size.width,"height":area.size.height},"windows":native});
-        std::fs::write(path, serde_json::to_vec(&value).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(windows::seats(&native, scale)
+fn seats_on(native: &[windows::WindowRect], screen: &desktop::Screen) -> Vec<windows::Seat> {
+    let area = screen.work;
+    let scale = screen.scale;
+    windows::seats(native, scale)
         .into_iter()
         .filter_map(|mut seat| {
-            if seat.top < area.position.y as f64 + 128.0 * scale
-                || seat.top > area.position.y as f64 + area.size.height as f64 - 40.0 * scale
-            {
+            if seat.top < area.y + 128.0 * scale || seat.top > area.bottom() - 40.0 * scale {
                 return None;
             }
-            seat.left = seat.left.max(area.position.x as f64 + 8.0 * scale);
-            seat.right = seat
-                .right
-                .min(area.position.x as f64 + area.size.width as f64 - 8.0 * scale);
+            seat.left = seat.left.max(area.x + 8.0 * scale);
+            seat.right = seat.right.min(area.right() - 8.0 * scale);
             (seat.right - seat.left >= 60.0 * scale).then_some(seat)
         })
-        .collect())
+        .collect()
 }
 
-fn toggle_perch(app: &tauri::AppHandle) -> Result<(), String> {
-    let state = app.state::<State>();
-    if !state.positionable {
-        return Err("当前桌面不支持窗口停靠，请使用 X11 或 XWayland".into());
+fn plan_motion(
+    m: &mut Motion,
+    screens: &[desktop::Screen],
+    native: &[windows::WindowRect],
+    size: desktop::Point,
+    command: &str,
+    destination: Option<usize>,
+    autonomous: bool,
+) -> Result<(), String> {
+    if m.reduced && command != "climb" {
+        return Err("已开启减少动态效果，仍可以直接拖动桌宠".into());
     }
-    let window = app.get_webview_window("pet").ok_or("桌宠窗口不可用")?;
-    let current = state.motion.lock().unwrap().clone();
-    if current.phase == "dragging" {
+    if m.phase == "dragging" {
         return Err("请先放下桌宠".into());
     }
-    let scale = window.scale_factor().map_err(|e| e.to_string())?;
-    let size = window.outer_size().map_err(|e| e.to_string())?;
-    let seats = if current.phase == "perched" {
-        Vec::new()
+    let current = desktop::nearest(screens, m.feet(size)).ok_or("没有可用的显示器")?;
+    let screen = &screens[current];
+    if command == "climb" {
+        let seats = seats_on(native, screen);
+        let front = seats.first().map(|s| s.window.id);
+        let centre = m.feet(size).0;
+        if m.reduced {
+            let seat = seats
+                .into_iter()
+                .filter(|s| Some(s.window.id) == front)
+                .min_by(|a, b| {
+                    (centre - centre.clamp(a.left, a.right))
+                        .abs()
+                        .total_cmp(&(centre - centre.clamp(b.left, b.right)).abs())
+                })
+                .ok_or("没有可坐的窗口上沿，请将一个普通窗口移到屏幕中部")?;
+            m.generation = m.generation.wrapping_add(1);
+            m.sit(seat, size);
+            return Ok(());
+        }
+        let target = seats
+            .into_iter()
+            .filter(|s| Some(s.window.id) == front)
+            .find_map(|s| {
+                windows::climb_side(&s, native, screen.work, m.scale, centre).map(|side| (s, side))
+            });
+        let (seat, side) =
+            target.ok_or("没有可攀爬的窗口边缘，请给普通窗口的两侧和上方留一点空间")?;
+        m.climb(
+            seat,
+            side,
+            screen.floor(centre).1,
+            size,
+            screens,
+            autonomous,
+        );
     } else {
-        window_seats(&window, scale)?
-    };
-    // Explicit "sit" chooses the frontmost usable window, then the nearest span
-    // on that window. Do not jump to an unrelated back window just because it is closer.
-    let front = seats.first().map(|s| s.window.id);
-    let target = seats
-        .into_iter()
-        .filter(|s| Some(s.window.id) == front)
-        .min_by(|a, b| {
-            let centre = current.x + size.width as f64 / 2.0;
-            let score =
-                |s: &windows::Seat| (centre - centre.clamp(s.left, s.right)).abs() + s.top * 0.05;
-            score(a).total_cmp(&score(b))
-        });
-    let mut m = state.motion.lock().unwrap();
-    if current.phase == "perched" {
-        m.leave();
-    } else {
-        let seat = target.ok_or("没有可坐的窗口上沿，请将一个普通窗口移到屏幕中部")?;
-        m.scale = scale;
-        m.sit(seat, (size.width as f64, size.height as f64));
+        let target = destination.unwrap_or(current);
+        let target_screen = screens.get(target).ok_or("目标显示器已断开")?;
+        let x = if target == current && command != "screen" {
+            let centre = m.feet(size).0;
+            let step = 240.0 * m.scale;
+            if centre < screen.work.x + screen.work.width / 2.0 {
+                centre + step
+            } else {
+                centre - step
+            }
+        } else {
+            target_screen.work.x + target_screen.work.width / 2.0
+        };
+        let mut from = m.feet(size);
+        let mut points = Vec::new();
+        let floor = screen.floor(from.0);
+        if (from.1 - floor.1).abs() > 5.0 * m.scale {
+            points.push((from.0, floor.1));
+            from = (from.0, floor.1);
+        }
+        points.extend(desktop::path(screens, from, target, x)?);
+        m.walk(&points, size, screens, autonomous);
     }
+    Ok(())
+}
+
+fn move_pet(
+    app: &tauri::AppHandle,
+    command: &str,
+    destination: Option<&str>,
+) -> Result<(), String> {
+    let state = app.state::<State>();
+    if state.stop.load(Ordering::Relaxed) {
+        return Err("应用正在退出".into());
+    }
+    if command == "pause" || command == "resume" {
+        state.service.apply(
+            "settings:set",
+            json!({"motionPausedUntil":if command=="pause"{companion::now()+3600_000}else{0}}),
+        )?;
+        let snapshot = {
+            let mut m = state.motion.lock().unwrap();
+            m.generation = m.generation.wrapping_add(1);
+            if command == "pause" {
+                m.pause("user");
+            } else if m.pause_reason == "user" {
+                m.pause("starting");
+            }
+            m.clone()
+        };
+        app.emit("motion:update", snapshot)
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    if !state.positionable {
+        return Err("当前 Wayland 桌面不允许应用自行移动；X11 或 XWayland 支持桌面活动".into());
+    }
+    if !["walk", "climb", "screen", "stop"].contains(&command) {
+        return Err("未知桌面活动".into());
+    }
+    let window = app.get_webview_window("pet").ok_or("桌宠窗口不可用")?;
+    if command == "stop" {
+        let snapshot = {
+            let mut m = state.motion.lock().unwrap();
+            if m.phase == "dragging" {
+                return Err("请先放下桌宠".into());
+            }
+            m.leave();
+            m.clone()
+        };
+        return window
+            .emit("motion:update", snapshot)
+            .map_err(|e| e.to_string());
+    }
+    let generation = state.motion.lock().unwrap().generation;
+    let screens = desktop::screens(&window)?;
+    let destination = destination
+        .map(|key| {
+            screens
+                .iter()
+                .position(|s| s.key() == key)
+                .ok_or("显示器布局已改变，请刷新屏幕列表")
+        })
+        .transpose()?;
+    if command == "screen" && destination.is_none() {
+        return Err("请选择一块显示器".into());
+    }
+    let native = if command == "climb" {
+        windows::visible(desktop::units(&window))?
+    } else {
+        Vec::new()
+    };
+    let size = desktop::size(&window)?;
+    let scale = desktop::units(&window);
+    let settings = state.service.data.snapshot();
+    if command == "screen" && settings["settings"]["crossScreens"] == false {
+        return Err("请先在桌面活动设置中允许跨屏".into());
+    }
+    if command != "stop"
+        && settings["settings"]["motionPausedUntil"]
+            .as_u64()
+            .unwrap_or(0)
+            > companion::now()
+    {
+        return Err("桌面活动已暂停，请先继续活动".into());
+    }
+    let mut m = state.motion.lock().unwrap();
+    if m.generation != generation || m.phase == "dragging" {
+        return Err("移动已被拖动打断".into());
+    }
+    m.rebase(size, scale);
+    plan_motion(&mut m, &screens, &native, size, command, destination, false)?;
     let snapshot = m.clone();
     drop(m);
-    window
-        .set_position(PhysicalPosition::new(
-            snapshot.x.round() as i32,
-            snapshot.y.round() as i32,
-        ))
-        .map_err(|e| e.to_string())?;
+    if !snapshot.scripted() {
+        desktop::place(&window, (snapshot.x, snapshot.y))?;
+    }
     trace_motion(&window, &snapshot);
     window
         .emit("motion:update", snapshot)
         .map_err(|e| e.to_string())
+}
+
+fn toggle_perch(app: &tauri::AppHandle) -> Result<(), String> {
+    let phase = app.state::<State>().motion.lock().unwrap().phase.clone();
+    move_pet(app, if phase == "perched" { "stop" } else { "climb" }, None)
 }
 #[tauri::command]
 fn perch_toggle(window: WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
@@ -599,6 +761,38 @@ fn perch_toggle(window: WebviewWindow, app: tauri::AppHandle) -> Result<(), Stri
         return Err("请从桌宠操作窗口停靠".into());
     }
     toggle_perch(&app)
+}
+#[tauri::command]
+async fn motion_command(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+    command: String,
+    screen: Option<String>,
+) -> Result<(), String> {
+    if !["pet", "panel"].contains(&window.label()) {
+        return Err("请从桌宠或控制面板操作".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || move_pet(&app, &command, screen.as_deref()))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+fn motion_status(window: WebviewWindow, app: tauri::AppHandle) -> Result<Value, String> {
+    panel_only(&window)?;
+    let state = app.state::<State>();
+    if !state.positionable {
+        return Ok(
+            json!({"positionable":false,"screens":[],"current":null,"motion":*state.motion.lock().unwrap()}),
+        );
+    }
+    let pet = app.get_webview_window("pet").ok_or("桌宠窗口不可用")?;
+    let screens = desktop::screens(&pet)?;
+    let size = desktop::size(&pet)?;
+    let motion = state.motion.lock().unwrap().clone();
+    let current = desktop::nearest(&screens, motion.feet(size)).map(|i| screens[i].key());
+    Ok(
+        json!({"positionable":state.positionable,"screens":screens.iter().map(|s|json!({"id":s.key(),"name":s.name,"bounds":s.bounds})).collect::<Vec<_>>(),"current":current,"motion":motion}),
+    )
 }
 
 #[cfg(target_os = "macos")]
@@ -668,108 +862,305 @@ fn start_motion(
     std::thread::spawn(move || {
         let mut last = Instant::now();
         let mut ignored = false;
-        let mut visible_seats = Vec::new();
-        let mut windows_at = Instant::now() - Duration::from_secs(1);
-        let mut last_window_error = String::new();
+        let mut screens = Vec::new();
+        let mut native = Vec::new();
+        let mut environment_at = Instant::now() - Duration::from_secs(2);
+        let mut windows_at = Instant::now() - Duration::from_secs(2);
+        let mut auto_at = Instant::now() + Duration::from_secs(30);
+        let mut allowed = false;
+        let mut suspended = true;
+        let mut pause_reason = "starting";
+        let mut auto_pause_reason = "starting";
+        let mut cross_screens = true;
+        let mut climb_windows = true;
+        let mut hidden_for_fullscreen = false;
+        let mut last_error = String::new();
+        let mut sequence = companion::now() ^ std::process::id() as u64;
         while !stop.load(Ordering::Relaxed) {
             let now = Instant::now();
             let dt = now.duration_since(last).as_secs_f64().clamp(0.001, 0.05);
             last = now;
-            // Window queries may synchronously marshal to the UI thread. Never hold a
-            // shared state lock while querying, moving or emitting to a window.
-            let cursor = window.cursor_position().ok();
-            let position = window.outer_position().ok();
-            let scale = window.scale_factor().unwrap_or(1.0);
-            let monitor = window.current_monitor().ok().flatten();
-            let size = window.outer_size().ok();
-            let observed_phase = motion.lock().unwrap().phase.clone();
-            if matches!(observed_phase.as_str(), "flying" | "perched")
-                && windows_at.elapsed()
-                    >= Duration::from_millis(if observed_phase == "flying" { 100 } else { 400 })
-            {
-                windows_at = Instant::now();
-                match window_seats(&window, scale) {
-                    Ok(seats) => {
-                        visible_seats = seats;
-                        last_window_error.clear();
+            // All native window calls stay outside the shared motion lock.
+            let size = match desktop::size(&window) {
+                Ok(s) => s,
+                Err(_) => break,
+            };
+            let scale = desktop::units(&window);
+            let cursor = desktop::cursor(&window);
+            let position = desktop::position(&window).ok();
+            let visible = window.is_visible().unwrap_or(false);
+            let observed = motion.lock().unwrap().clone();
+            if environment_at.elapsed() >= Duration::from_secs(1) {
+                environment_at = now;
+                match desktop::screens(&window) {
+                    Ok(value) => {
+                        screens = value;
                     }
                     Err(error) => {
-                        visible_seats.clear();
-                        if error != last_window_error {
+                        screens.clear();
+                        if error != last_error {
                             let _ = window.emit("pet:error", error.clone());
-                            last_window_error = error;
+                            last_error = error;
+                        }
+                    }
+                }
+                let state = window.app_handle().state::<State>();
+                let d = state.service.data.snapshot();
+                let busy =
+                    state.tasks.list().iter().any(|t| {
+                        !matches!(t.status.as_str(), "completed" | "cancelled" | "failed")
+                    });
+                let unlocked = observer::unlocked();
+                let panel_visible = window
+                    .app_handle()
+                    .get_webview_window("panel")
+                    .is_some_and(|w| w.is_visible().unwrap_or(false));
+                let fullscreen = d["settings"]["hideOnFullscreen"] != false
+                    && native
+                        .first()
+                        .is_some_and(|w| screens.iter().any(|s| s.fullscreen(w)));
+                if fullscreen && visible {
+                    let _ = window.hide();
+                    hidden_for_fullscreen = true;
+                } else if !fullscreen && hidden_for_fullscreen {
+                    let _ = window.show();
+                    hidden_for_fullscreen = false;
+                }
+                pause_reason = if !unlocked {
+                    "locked"
+                } else if fullscreen {
+                    "fullscreen"
+                } else if d["settings"]["motionPausedUntil"].as_u64().unwrap_or(0)
+                    > companion::now()
+                {
+                    "user"
+                } else {
+                    ""
+                };
+                suspended = !pause_reason.is_empty();
+                auto_pause_reason = if suspended {
+                    pause_reason
+                } else if busy {
+                    "task"
+                } else if panel_visible {
+                    "panel"
+                } else if companion::quiet_hours(&d) {
+                    "quiet"
+                } else if d["settings"]["wander"] == false {
+                    "disabled"
+                } else if d["settings"]["focusGuard"] != false
+                    && d["pomodoro"]["until"].as_u64().unwrap_or(0) > companion::now()
+                {
+                    "focus"
+                } else if observer::idle_seconds() >= 300.0 {
+                    "away"
+                } else {
+                    ""
+                };
+                allowed = auto_pause_reason.is_empty();
+                cross_screens = d["settings"]["crossScreens"] != false;
+                climb_windows = d["settings"]["climbWindows"] != false;
+                if !allowed {
+                    auto_at = now + Duration::from_secs(15);
+                }
+            }
+            let interval = if observed.phase == "flying" {
+                100
+            } else if observed.scripted() {
+                250
+            } else if observed.phase == "perched" {
+                400
+            } else {
+                1000
+            };
+            if windows_at.elapsed() >= Duration::from_millis(interval) {
+                windows_at = now;
+                match windows::visible(scale) {
+                    Ok(windows) => {
+                        native = windows;
+                        trace_windows(&window, &screens, &native, scale, position, size);
+                        last_error.clear();
+                    }
+                    Err(error) => {
+                        native.clear();
+                        if error != last_error {
+                            let _ = window.emit("pet:error", error.clone());
+                            last_error = error;
                         }
                     }
                 }
             }
-            let check_button = observed_phase == "dragging";
-            let pressed = check_button && left_pressed();
+            let inside = cursor.zip(position).is_some_and(|(c, p)| {
+                let x = (c.0 - p.0) / scale;
+                let y = (c.1 - p.1) / scale;
+                regions
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|r| x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height)
+            });
+            let pressed = observed.phase == "dragging" && left_pressed();
             let mut m = motion.lock().unwrap();
-            let previous = m.phase.clone();
-            let moving = previous == "flying";
-            if previous == "dragging" {
-                // Pointer capture is the primary input. Only a hardware press that was
-                // actually observed may trigger the outside-window release backstop.
+            let previous = (m.phase.clone(), m.facing, m.paused, m.pause_reason.clone());
+            let was_scripted = m.scripted();
+            let was_flying = m.phase == "flying";
+            m.rebase(size, scale);
+            if !m.scripted() && !matches!(m.phase.as_str(), "dragging" | "flying") {
+                if let Some(p) = position {
+                    m.x = p.0;
+                    m.y = p.1;
+                }
+            }
+            if m.phase == "dragging" {
                 if pressed {
                     m.hardware_seen = true;
                 } else if m.hardware_seen {
                     m.release();
                 }
             }
-            if m.phase == "perched" && windows_at >= m.last_sample {
-                let centre = m.x + size.map(|s| s.width as f64 / 2.0).unwrap_or(180.0 * scale);
-                let valid = m
-                    .seat
-                    .as_ref()
-                    .is_some_and(|seat| seat.remains_visible(&visible_seats, centre, scale));
-                if !valid {
+            let screen_index = desktop::nearest(&screens, m.feet(size));
+            if let Some(index) = screen_index {
+                let screen = &screens[index];
+                let seats = seats_on(&native, screen);
+                if windows_at >= m.last_sample {
+                    let target = if m.scripted() {
+                        m.target_seat().cloned()
+                    } else {
+                        m.seat.clone()
+                    };
+                    let centre = if m.scripted() {
+                        m.target_centre().unwrap_or(m.feet(size).0)
+                    } else {
+                        m.feet(size).0
+                    };
+                    if target.is_some_and(|seat| !seat.remains_visible(&seats, centre, scale)) {
+                        m.leave();
+                    }
+                }
+                if m.scripted() && !m.layout_valid(&screens) {
                     m.leave();
                 }
-            }
-            if m.phase == "flying" {
-                let previous_feet =
-                    m.y + size.map(|s| s.height as f64).unwrap_or(340.0 * scale) - 5.0 * scale;
-                if let (Some(monitor), Some(size)) = (monitor, size) {
-                    let area = monitor.work_area();
-                    let left = area.position.x as f64;
-                    let top = area.position.y as f64;
-                    let right = (left + area.size.width as f64 - size.width as f64).max(left);
-                    let bottom = (top + area.size.height as f64 - size.height as f64).max(top);
-                    m.step(dt, (left, top, right, bottom));
-                    m.land(
-                        &visible_seats,
-                        previous_feet,
-                        (size.width as f64, size.height as f64),
-                    );
+                let autonomous = m.autonomous();
+                m.pause(if suspended {
+                    pause_reason
+                } else if autonomous && inside {
+                    "hover"
+                } else if autonomous && !allowed {
+                    auto_pause_reason
+                } else {
+                    ""
+                });
+                if m.scripted() {
+                    m.advance(dt, size);
+                } else if m.phase == "flying" && !m.paused {
+                    let old_feet = m.feet(size).1;
+                    let area = screen.work;
+                    let left = area.x - size.0 / 2.0 + 90.0 * scale;
+                    let right = (area.right() - size.0 / 2.0 - 90.0 * scale).max(left);
+                    let bottom = (area.bottom() - size.1).max(area.y);
+                    m.step(dt, (left, area.y, right, bottom));
+                    m.land(&seats, old_feet, size);
                 }
+                if allowed
+                    && visible
+                    && !inside
+                    && !m.reduced
+                    && !m.scripted()
+                    && matches!(m.phase.as_str(), "settled" | "perched")
+                    && m.last_sample.elapsed() >= Duration::from_secs(45)
+                    && now >= auto_at
+                {
+                    sequence = sequence.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    let choice = (sequence >> 32) % 6;
+                    let target = if choice == 0 && cross_screens {
+                        screens
+                            .iter()
+                            .enumerate()
+                            .filter(|(i, _)| *i != index)
+                            .find(|(i, s)| {
+                                desktop::path(
+                                    &screens,
+                                    m.feet(size),
+                                    *i,
+                                    s.work.x + s.work.width / 2.0,
+                                )
+                                .is_ok()
+                            })
+                            .map(|(i, _)| i)
+                    } else {
+                        None
+                    };
+                    let command = if choice <= 2 && climb_windows && target.is_none() {
+                        "climb"
+                    } else {
+                        "walk"
+                    };
+                    if plan_motion(&mut m, &screens, &native, size, command, target, true).is_err()
+                    {
+                        let _ = plan_motion(&mut m, &screens, &native, size, "walk", None, true);
+                    }
+                    auto_at = now + Duration::from_secs(60 + (sequence % 60));
+                }
+                // A disconnected display must never strand the character in the empty desktop.
+                if !matches!(m.phase.as_str(), "dragging")
+                    && !screens.iter().any(|s| s.bounds.contains(m.feet(size)))
+                {
+                    let p = screen.floor(m.feet(size).0);
+                    m.leave();
+                    m.x = p.0 - size.0 / 2.0;
+                    m.y = p.1 - size.1 + 5.0 * scale;
+                    m.phase = "settled".into();
+                }
+            } else {
+                m.pause("display");
             }
             let snapshot = m.clone();
             drop(m);
-            if moving || snapshot.phase == "flying" {
-                let _ = window.set_position(PhysicalPosition::new(
-                    snapshot.x.round() as i32,
-                    snapshot.y.round() as i32,
-                ));
+            let same_owner = { motion.lock().unwrap().generation == snapshot.generation };
+            let changed_position = position
+                .is_some_and(|p| (p.0 - snapshot.x).abs() > 0.5 || (p.1 - snapshot.y).abs() > 0.5);
+            if (was_scripted
+                || was_flying
+                || snapshot.scripted()
+                || snapshot.phase == "flying"
+                || changed_position)
+                && !snapshot.paused
+                && same_owner
+                && snapshot.phase != "dragging"
+            {
+                if let Err(error) = desktop::place(&window, (snapshot.x, snapshot.y)) {
+                    let _ = window.emit("pet:error", error);
+                }
             }
-            if previous != snapshot.phase {
+            if previous
+                != (
+                    snapshot.phase.clone(),
+                    snapshot.facing,
+                    snapshot.paused,
+                    snapshot.pause_reason.clone(),
+                )
+            {
                 trace_motion(&window, &snapshot);
                 let _ = window.emit("motion:update", snapshot.clone());
             }
-            let in_motion = matches!(snapshot.phase.as_str(), "dragging" | "flying");
-            if window.is_visible().unwrap_or(false) {
-                if let (Some(cursor), Some(position)) = (cursor, position) {
-                    let x = (cursor.x - position.x as f64) / scale;
-                    let y = (cursor.y - position.y as f64) / scale;
-                    let inside = snapshot.phase == "dragging"
-                        || regions.lock().unwrap().iter().any(|r| {
-                            x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
-                        });
-                    if ignored == inside && window.set_ignore_cursor_events(!inside).is_ok() {
-                        ignored = !inside;
-                    }
+            if visible {
+                let hit = snapshot.phase == "dragging" || inside;
+                if ignored == hit && window.set_ignore_cursor_events(!hit).is_ok() {
+                    ignored = !hit;
                 }
             }
-            std::thread::sleep(Duration::from_millis(if in_motion { 16 } else { 80 }));
+            let moving =
+                (snapshot.scripted() || snapshot.phase == "flying" || snapshot.phase == "dragging")
+                    && !snapshot.paused;
+            std::thread::sleep(Duration::from_millis(
+                if !visible || pause_reason == "locked" {
+                    400
+                } else if moving {
+                    16
+                } else {
+                    80
+                },
+            ));
         }
     });
 }
@@ -824,16 +1215,14 @@ fn main() {
             .build()?;
             let mut initial = Motion::new(100.0, 100.0);
             if positionable {
-                if let Some(monitor) = pet.primary_monitor()? {
-                    let area = monitor.work_area();
-                    let size = pet.outer_size()?;
-                    initial.x = (area.position.x as f64 + area.size.width as f64 * 0.72
-                        - size.width as f64 / 2.0)
-                        .max(area.position.x as f64);
-                    initial.y = (area.position.y as f64 + area.size.height as f64
-                        - size.height as f64)
-                        .max(area.position.y as f64);
-                    pet.set_position(PhysicalPosition::new(initial.x as i32, initial.y as i32))?;
+                let screens = desktop::screens(&pet)?;
+                let size = desktop::size(&pet)?;
+                initial.rebase(size, desktop::units(&pet));
+                if let Some(screen) = screens.first() {
+                    let floor = screen.floor(screen.work.x + screen.work.width * 0.72);
+                    initial.x = floor.0 - size.0 / 2.0;
+                    initial.y = floor.1 - size.1 + 5.0 * initial.scale;
+                    desktop::place(&pet, (initial.x, initial.y))?;
                 }
             }
             let motion = Arc::new(Mutex::new(initial));
@@ -980,6 +1369,8 @@ fn main() {
             drag_move,
             drag_end,
             perch_toggle,
+            motion_command,
+            motion_status,
             companion_command,
             observer_windows,
             observer_status,
@@ -1000,4 +1391,57 @@ fn main() {
             state.tasks.shutdown();
         }
     });
+}
+
+#[cfg(test)]
+mod movement_commands_tests {
+    use super::*;
+    #[test]
+    fn reduced_motion_preserves_the_existing_instant_perch_contract() {
+        let bounds = desktop::Bounds {
+            x: 0.0,
+            y: 0.0,
+            width: 1600.0,
+            height: 1000.0,
+        };
+        let screens = [desktop::Screen {
+            name: "fixture".into(),
+            bounds,
+            work: bounds,
+            scale: 1.0,
+        }];
+        let windows = [windows::WindowRect {
+            id: 3,
+            pid: 4,
+            x: 300.0,
+            y: 400.0,
+            width: 700.0,
+            height: 400.0,
+        }];
+        let mut m = Motion::new(200.0, 660.0);
+        m.reduce(true);
+        plan_motion(
+            &mut m,
+            &screens,
+            &windows,
+            (360.0, 340.0),
+            "climb",
+            None,
+            false,
+        )
+        .unwrap();
+        assert_eq!(m.phase, "perched");
+        assert!(!m.scripted());
+        assert_eq!(m.seat.as_ref().unwrap().window.id, 3);
+        assert!(plan_motion(
+            &mut m,
+            &screens,
+            &windows,
+            (360.0, 340.0),
+            "walk",
+            None,
+            false
+        )
+        .is_err());
+    }
 }

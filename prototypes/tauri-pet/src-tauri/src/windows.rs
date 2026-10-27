@@ -84,6 +84,46 @@ pub fn seats(windows: &[WindowRect], scale: f64) -> Vec<Seat> {
     result
 }
 
+/// Pick a visible side with room for the body; a covered top fragment is not a climbing wall.
+pub fn climb_side(
+    seat: &Seat,
+    windows: &[WindowRect],
+    area: crate::desktop::Bounds,
+    scale: f64,
+    centre: f64,
+) -> Option<i8> {
+    let z = windows
+        .iter()
+        .position(|w| w.id == seat.window.id && w.pid == seat.window.pid)?;
+    let w = &seat.window;
+    if seat.top + 145.0 * scale >= area.bottom() {
+        return None;
+    }
+    let preferred = if centre <= w.x + w.width / 2.0 { 1 } else { -1 };
+    for side in [preferred, -preferred] {
+        let edge = if side > 0 { w.x } else { w.x + w.width };
+        let x = edge - 42.0 * scale * side as f64;
+        if x - 70.0 * scale < area.x || x + 70.0 * scale > area.right() {
+            continue;
+        }
+        if (side > 0 && seat.left > w.x + 34.0 * scale)
+            || (side < 0 && seat.right < w.x + w.width - 34.0 * scale)
+        {
+            continue;
+        }
+        let covered = windows[..z].iter().any(|above| {
+            above.x < x + 70.0 * scale
+                && above.x + above.width > x - 70.0 * scale
+                && above.y < area.bottom()
+                && above.y + above.height > seat.top
+        });
+        if !covered {
+            return Some(side);
+        }
+    }
+    None
+}
+
 #[cfg(target_os = "macos")]
 pub fn visible(scale: f64) -> Result<Vec<WindowRect>, String> {
     use std::ffi::c_void;
@@ -443,6 +483,31 @@ mod tests {
             width: w,
             height: h,
         }
+    }
+    #[test]
+    fn climbing_requires_a_clear_side_not_only_a_visible_top_edge() {
+        let area = crate::desktop::Bounds {
+            x: 0.0,
+            y: 0.0,
+            width: 1600.0,
+            height: 1000.0,
+        };
+        let target = rect(2, 300.0, 400.0, 700.0, 500.0);
+        let seat = seats(&[target.clone()], 1.0).remove(0);
+        assert_eq!(
+            climb_side(&seat, &[target.clone()], area, 1.0, 200.0),
+            Some(1)
+        );
+        let left = rect(3, 180.0, 600.0, 150.0, 400.0);
+        let right = rect(4, 980.0, 600.0, 150.0, 400.0);
+        assert_eq!(
+            climb_side(&seat, &[left.clone(), target.clone()], area, 1.0, 200.0),
+            Some(-1)
+        );
+        assert_eq!(
+            climb_side(&seat, &[left, right, target], area, 1.0, 200.0),
+            None
+        );
     }
     #[test]
     fn obscured_edges_are_not_seats_and_partial_edges_are_split() {

@@ -1,0 +1,2056 @@
+{
+  "version": "2.20",
+  "variables": {
+    "paper": {
+      "type": "color",
+      "value": "#FCFAF6"
+    },
+    "ink": {
+      "type": "color",
+      "value": "#332D29"
+    },
+    "muted": {
+      "type": "color",
+      "value": "#716960"
+    },
+    "line": {
+      "type": "color",
+      "value": "#E9E1D6"
+    },
+    "accent": {
+      "type": "color",
+      "value": "#A74D2A"
+    },
+    "wash": {
+      "type": "color",
+      "value": "#F4E7D5"
+    }
+  },
+  "children": [
+    {
+      "type": "frame",
+      "id": "MWUF0",
+      "x": 0,
+      "y": 0,
+      "name": "01 · 陪伴与聊天",
+      "clip": true,
+      "width": 840,
+      "height": 700,
+      "fill": "$paper",
+      "cornerRadius": 16,
+      "children": [
+        {
+          "type": "frame",
+          "id": "Nvjtk",
+          "name": "侧栏",
+          "width": 172,
+          "height": "fill_container",
+          "fill": "#F3EEE6",
+          "layout": "vertical",
+          "gap": 28,
+          "padding": [
+            28,
+            16
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "LuW3I",
+              "name": "品牌",
+              "gap": 9,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "rlbD0",
+                  "name": "太阳花标识",
+                  "width": 18,
+                  "height": 18,
+                  "icon": "flower-2",
+                  "library": "lucide",
+                  "fill": "$accent"
+                },
+                {
+                  "type": "text",
+                  "id": "h3NgV",
+                  "name": "品牌名称",
+                  "fill": "$ink",
+                  "content": "大小姐",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 17,
+                  "fontWeight": "600"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "M7ig43",
+              "name": "导航",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 7,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "h5FGsj",
+                  "name": "聊天 导航",
+                  "width": "fill_container",
+                  "fill": "#E6D7C5",
+                  "cornerRadius": 9,
+                  "gap": 10,
+                  "padding": [
+                    11,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "qrc6p",
+                      "name": "聊天 图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "message-circle",
+                      "library": "lucide",
+                      "fill": "$ink"
+                    },
+                    {
+                      "type": "text",
+                      "id": "S67K6",
+                      "name": "聊天 导航文字",
+                      "fill": "$ink",
+                      "content": "聊天",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "elwtd",
+                  "name": "待办 导航",
+                  "width": "fill_container",
+                  "fill": "#00000000",
+                  "cornerRadius": 9,
+                  "gap": 10,
+                  "padding": [
+                    11,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "xWVes",
+                      "name": "待办 图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "check-check",
+                      "library": "lucide",
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "J5ezy1",
+                      "name": "待办 导航文字",
+                      "fill": "$muted",
+                      "content": "待办",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Lbozz",
+                  "name": "目标 导航",
+                  "width": "fill_container",
+                  "fill": "#00000000",
+                  "cornerRadius": 9,
+                  "gap": 10,
+                  "padding": [
+                    11,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "QtJZm",
+                      "name": "目标 图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "flag",
+                      "library": "lucide",
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "gFTRM",
+                      "name": "目标 导航文字",
+                      "fill": "$muted",
+                      "content": "目标",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "hwbPq",
+                  "name": "任务 导航",
+                  "width": "fill_container",
+                  "fill": "#00000000",
+                  "cornerRadius": 9,
+                  "gap": 10,
+                  "padding": [
+                    11,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "mMLiA",
+                      "name": "任务 图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "square-terminal",
+                      "library": "lucide",
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "NqShP",
+                      "name": "任务 导航文字",
+                      "fill": "$muted",
+                      "content": "任务",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "uGjkV",
+                  "name": "动作 导航",
+                  "width": "fill_container",
+                  "fill": "#00000000",
+                  "cornerRadius": 9,
+                  "gap": 10,
+                  "padding": [
+                    11,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "ogHx6",
+                      "name": "动作 图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "footprints",
+                      "library": "lucide",
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "DBrjE",
+                      "name": "动作 导航文字",
+                      "fill": "$muted",
+                      "content": "动作",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "NClMY",
+                  "name": "成长 导航",
+                  "width": "fill_container",
+                  "fill": "#00000000",
+                  "cornerRadius": 9,
+                  "gap": 10,
+                  "padding": [
+                    11,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "kK4lu",
+                      "name": "成长 图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "sprout",
+                      "library": "lucide",
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "kYeAW",
+                      "name": "成长 导航文字",
+                      "fill": "$muted",
+                      "content": "成长",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "BbtYm",
+                  "name": "动态 导航",
+                  "width": "fill_container",
+                  "fill": "#00000000",
+                  "cornerRadius": 9,
+                  "gap": 10,
+                  "padding": [
+                    11,
+                    12
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "aS86G",
+                      "name": "动态 图标",
+                      "width": 18,
+                      "height": 18,
+                      "icon": "clock-3",
+                      "library": "lucide",
+                      "fill": "$muted"
+                    },
+                    {
+                      "type": "text",
+                      "id": "HcdMT",
+                      "name": "动态 导航文字",
+                      "fill": "$muted",
+                      "content": "动态",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 14,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "dEdJK",
+              "name": "弹性留白",
+              "width": 1,
+              "height": "fill_container"
+            },
+            {
+              "type": "frame",
+              "id": "gSngs",
+              "name": "设置入口",
+              "gap": 10,
+              "padding": 12,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "icon",
+                  "id": "A9BMW",
+                  "name": "设置图标",
+                  "width": 18,
+                  "height": 18,
+                  "icon": "settings-2",
+                  "library": "lucide",
+                  "fill": "$muted"
+                },
+                {
+                  "type": "text",
+                  "id": "d331xF",
+                  "name": "设置文字",
+                  "fill": "$muted",
+                  "content": "设置",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 14,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "nl0uR",
+          "name": "聊天主区",
+          "width": "fill_container",
+          "height": "fill_container",
+          "layout": "vertical",
+          "gap": 24,
+          "padding": [
+            30,
+            30,
+            24,
+            30
+          ],
+          "children": [
+            {
+              "type": "frame",
+              "id": "GIZgV",
+              "name": "聊天标题",
+              "width": "fill_container",
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "HAIKZ",
+                  "name": "标题组",
+                  "layout": "vertical",
+                  "gap": 5,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "sPw5v",
+                      "name": "聊天标题文字",
+                      "fill": "$ink",
+                      "content": "今天也一起。",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 25,
+                      "fontWeight": "600",
+                      "letterSpacing": -0.5
+                    },
+                    {
+                      "type": "text",
+                      "id": "fH6H4",
+                      "name": "后端标签",
+                      "fill": "$muted",
+                      "content": "Codex · 随时聊聊",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "rpCmw",
+                  "name": "回到桌宠",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 10,
+                  "stroke": "$line",
+                  "strokeWidth": 1,
+                  "padding": [
+                    10,
+                    16
+                  ],
+                  "justifyContent": "center",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "HpOLH",
+                      "name": "回到桌宠 label",
+                      "fill": "$ink",
+                      "content": "回到桌宠 ↗",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 13,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "g1dRS",
+              "name": "对话区",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "gap": 22,
+              "padding": [
+                26,
+                0
+              ],
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "ra6I5",
+                  "name": "用户消息容器",
+                  "width": "fill_container",
+                  "justifyContent": "end",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "e3j9H",
+                      "name": "用户消息",
+                      "fill": "#F0E4D4",
+                      "cornerRadius": [
+                        14,
+                        14,
+                        4,
+                        14
+                      ],
+                      "padding": [
+                        13,
+                        17
+                      ],
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "qNcTB",
+                          "name": "用户消息内容",
+                          "fill": "$ink",
+                          "content": "刚写完这个页面，陪我看看？",
+                          "fontFamily": "Noto Sans SC",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "A10tr",
+                  "name": "大小姐回复",
+                  "width": "fill_container",
+                  "layout": "vertical",
+                  "gap": 9,
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "WVQMh",
+                      "name": "说话者",
+                      "fill": "$accent",
+                      "content": "大小姐",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "600"
+                    },
+                    {
+                      "type": "text",
+                      "id": "HI9JK",
+                      "name": "回复内容",
+                      "fill": "$ink",
+                      "textGrowth": "fixed-width",
+                      "width": "fill_container",
+                      "content": "好呀。先把最重要的那件事放到眼前，\n剩下的，我们一件一件来。",
+                      "lineHeight": 1.8,
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 15,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "kMPfo",
+                  "name": "跟进动作",
+                  "gap": 10,
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "cuAYw",
+                      "name": "一起专注",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 10,
+                      "stroke": "$line",
+                      "strokeWidth": 1,
+                      "padding": [
+                        10,
+                        16
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "bjO73",
+                          "name": "一起专注 label",
+                          "fill": "$ink",
+                          "content": "专注 25 分钟",
+                          "fontFamily": "Noto Sans SC",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "kxM2p",
+                      "name": "记入待办",
+                      "fill": "#FFFFFF",
+                      "cornerRadius": 10,
+                      "stroke": "$line",
+                      "strokeWidth": 1,
+                      "padding": [
+                        10,
+                        16
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "B5abzN",
+                          "name": "记入待办 label",
+                          "fill": "$ink",
+                          "content": "记成待办",
+                          "fontFamily": "Noto Sans SC",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "xnERj",
+              "name": "输入框",
+              "width": "fill_container",
+              "fill": "#FFFFFF",
+              "cornerRadius": 14,
+              "stroke": "$line",
+              "strokeWidth": 1,
+              "layout": "vertical",
+              "gap": 20,
+              "padding": 17,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "E2SgwT",
+                  "name": "输入提示",
+                  "fill": "$muted",
+                  "content": "说点什么，或者交给我一件事…",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 14,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "G26G9",
+                  "name": "输入操作",
+                  "width": "fill_container",
+                  "justifyContent": "space_between",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "EXv7o",
+                      "name": "输入工具",
+                      "gap": 16,
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "icon",
+                          "id": "wnvTa",
+                          "name": "选窗口",
+                          "width": 18,
+                          "height": 18,
+                          "icon": "scan-text",
+                          "library": "lucide",
+                          "fill": "$muted"
+                        },
+                        {
+                          "type": "text",
+                          "id": "SC0NU",
+                          "name": "选窗口文字",
+                          "fill": "$muted",
+                          "content": "看一眼窗口",
+                          "fontFamily": "Noto Sans SC",
+                          "fontSize": 12,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "OUveF",
+                      "name": "发送",
+                      "fill": "$accent",
+                      "cornerRadius": 10,
+                      "stroke": "$accent",
+                      "strokeWidth": 1,
+                      "padding": [
+                        10,
+                        16
+                      ],
+                      "justifyContent": "center",
+                      "alignItems": "center",
+                      "children": [
+                        {
+                          "type": "text",
+                          "id": "V4J17b",
+                          "name": "发送 label",
+                          "fill": "#FFFFFF",
+                          "content": "发送 ↗",
+                          "fontFamily": "Noto Sans SC",
+                          "fontSize": 13,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "u6dwa",
+              "name": "聊天尾部",
+              "width": "fill_container",
+              "justifyContent": "space_between",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "K5Cfh",
+                  "name": "新对话入口",
+                  "fill": "$muted",
+                  "content": "＋ 新对话",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "MveGM",
+                  "name": "陪伴提醒",
+                  "fill": "$muted",
+                  "content": "不说话的时候，安静陪着你。",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "yeARo",
+      "x": 920,
+      "y": 0,
+      "name": "02 · 桌面气泡与安静状态",
+      "clip": true,
+      "width": 1000,
+      "height": 440,
+      "fill": "#EDE7DB",
+      "cornerRadius": 16,
+      "layout": "vertical",
+      "gap": 24,
+      "padding": 30,
+      "children": [
+        {
+          "type": "text",
+          "id": "PVnaA",
+          "name": "状态标题",
+          "fill": "$ink",
+          "content": "出现得刚刚好。",
+          "fontFamily": "Noto Sans SC",
+          "fontSize": 24,
+          "fontWeight": "600"
+        },
+        {
+          "type": "frame",
+          "id": "B5QKwL",
+          "name": "气泡状态对照",
+          "width": "fill_container",
+          "height": "fill_container",
+          "gap": 20,
+          "children": [
+            {
+              "type": "frame",
+              "id": "AHoZN",
+              "name": "01  安静陪伴",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "gap": 14,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "DhJ4d",
+                  "name": "01  安静陪伴 标签",
+                  "fill": "$muted",
+                  "content": "01  安静陪伴",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "JIYId",
+                  "name": "01  安静陪伴 舞台",
+                  "width": "fill_container",
+                  "height": 236,
+                  "layout": "vertical",
+                  "gap": 14,
+                  "justifyContent": "end",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "VmVbn",
+                      "name": "01  安静陪伴 角色",
+                      "clip": true,
+                      "width": 84,
+                      "height": 110,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "xmPhM",
+                          "x": 0,
+                          "y": 0,
+                          "name": "01  安静陪伴 角色 图像",
+                          "fill": {
+                            "type": "image",
+                            "enabled": true,
+                            "url": "../assets/sprites/idle.png",
+                            "mode": "stretch"
+                          },
+                          "width": 336,
+                          "height": 110
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "VDHoC",
+                  "name": "01  安静陪伴 行为说明",
+                  "fill": "$muted",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "没有新消息，不显示气泡。",
+                  "lineHeight": 1.6,
+                  "textAlign": "center",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "rFVS6",
+              "name": "02  一句话互动",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "gap": 14,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "GZ1DX",
+                  "name": "02  一句话互动 标签",
+                  "fill": "$muted",
+                  "content": "02  一句话互动",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "RdCNT",
+                  "name": "02  一句话互动 舞台",
+                  "width": "fill_container",
+                  "height": 236,
+                  "layout": "vertical",
+                  "gap": 14,
+                  "justifyContent": "end",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "oAn1X",
+                      "name": "02  一句话互动 气泡",
+                      "width": "fill_container",
+                      "fill": "#FFFCF6",
+                      "cornerRadius": 14,
+                      "stroke": "#E2D7C6",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 12,
+                      "padding": 15,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "SekrB",
+                          "name": "02  一句话互动 气泡顶栏",
+                          "width": "fill_container",
+                          "justifyContent": "space_between",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "M7RkRj",
+                              "name": "02  一句话互动 气泡名称",
+                              "fill": "$accent",
+                              "content": "大小姐",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "text",
+                              "id": "b3OcY",
+                              "name": "02  一句话互动 关闭",
+                              "fill": "$muted",
+                              "content": "×",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 14,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "HvEoE",
+                          "name": "02  一句话互动 气泡文字",
+                          "fill": "$ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "这一页的重点，很清楚了。",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Noto Sans SC",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "bMejY",
+                      "name": "02  一句话互动 角色",
+                      "clip": true,
+                      "width": 84,
+                      "height": 110,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "EZ3yP",
+                          "x": 0,
+                          "y": 0,
+                          "name": "02  一句话互动 角色 图像",
+                          "fill": {
+                            "type": "image",
+                            "enabled": true,
+                            "url": "../assets/sprites/read.png",
+                            "mode": "stretch"
+                          },
+                          "width": 336,
+                          "height": 110
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "p19Z4",
+                  "name": "02  一句话互动 行为说明",
+                  "fill": "$muted",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "读完自动收起，也可以点 ×。",
+                  "lineHeight": 1.6,
+                  "textAlign": "center",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "u4TT6W",
+              "name": "03  需要你决定",
+              "width": "fill_container",
+              "height": "fill_container",
+              "layout": "vertical",
+              "gap": 14,
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "udiv5",
+                  "name": "03  需要你决定 标签",
+                  "fill": "$muted",
+                  "content": "03  需要你决定",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "frame",
+                  "id": "v1Aehd",
+                  "name": "03  需要你决定 舞台",
+                  "width": "fill_container",
+                  "height": 236,
+                  "layout": "vertical",
+                  "gap": 14,
+                  "justifyContent": "end",
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "oUuen",
+                      "name": "03  需要你决定 气泡",
+                      "width": "fill_container",
+                      "fill": "#FFFCF6",
+                      "cornerRadius": 14,
+                      "stroke": "#E2D7C6",
+                      "strokeWidth": 1,
+                      "layout": "vertical",
+                      "gap": 12,
+                      "padding": 15,
+                      "children": [
+                        {
+                          "type": "frame",
+                          "id": "gXs9e",
+                          "name": "03  需要你决定 气泡顶栏",
+                          "width": "fill_container",
+                          "justifyContent": "space_between",
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "bOkk6",
+                              "name": "03  需要你决定 气泡名称",
+                              "fill": "$accent",
+                              "content": "大小姐",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 11,
+                              "fontWeight": "normal"
+                            },
+                            {
+                              "type": "text",
+                              "id": "AA2DP",
+                              "name": "03  需要你决定 关闭",
+                              "fill": "$muted",
+                              "content": "×",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 14,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        },
+                        {
+                          "type": "text",
+                          "id": "Ymd4S",
+                          "name": "03  需要你决定 气泡文字",
+                          "fill": "$ink",
+                          "textGrowth": "fixed-width",
+                          "width": "fill_container",
+                          "content": "要把这两项合成一个待办吗？",
+                          "lineHeight": 1.6,
+                          "fontFamily": "Noto Sans SC",
+                          "fontSize": 14,
+                          "fontWeight": "normal"
+                        },
+                        {
+                          "type": "frame",
+                          "id": "NquuT",
+                          "name": "决策操作",
+                          "gap": 14,
+                          "children": [
+                            {
+                              "type": "text",
+                              "id": "JSTCC",
+                              "name": "确认",
+                              "fill": "$accent",
+                              "content": "合并",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 12,
+                              "fontWeight": "600"
+                            },
+                            {
+                              "type": "text",
+                              "id": "tGBNj",
+                              "name": "取消",
+                              "fill": "$muted",
+                              "content": "不用啦",
+                              "fontFamily": "Noto Sans SC",
+                              "fontSize": 12,
+                              "fontWeight": "normal"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "frame",
+                      "id": "hRjXj",
+                      "name": "03  需要你决定 角色",
+                      "clip": true,
+                      "width": 84,
+                      "height": 110,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "CD1dE",
+                          "x": 0,
+                          "y": 0,
+                          "name": "03  需要你决定 角色 图像",
+                          "fill": {
+                            "type": "image",
+                            "enabled": true,
+                            "url": "../assets/sprites/wave.png",
+                            "mode": "stretch"
+                          },
+                          "width": 336,
+                          "height": 110
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "id": "t3Iaad",
+                  "name": "03  需要你决定 行为说明",
+                  "fill": "$muted",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "确认前保留，处理后立即收起。",
+                  "lineHeight": 1.6,
+                  "textAlign": "center",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "frame",
+      "id": "f8hbZ1",
+      "x": 0,
+      "y": 780,
+      "name": "03 · 动作与桌面活动",
+      "clip": true,
+      "width": 840,
+      "height": 940,
+      "fill": "$paper",
+      "cornerRadius": 16,
+      "layout": "vertical",
+      "gap": 24,
+      "padding": 32,
+      "children": [
+        {
+          "type": "frame",
+          "id": "W50y9A",
+          "name": "动作标题行",
+          "width": "fill_container",
+          "justifyContent": "space_between",
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "text",
+              "id": "X0z6PE",
+              "name": "动作标题",
+              "fill": "$ink",
+              "content": "让她去转转。",
+              "fontFamily": "Noto Sans SC",
+              "fontSize": 25,
+              "fontWeight": "600"
+            },
+            {
+              "type": "text",
+              "id": "kuogS",
+              "name": "动作设置入口",
+              "fill": "$accent",
+              "content": "桌面活动设置 ↗",
+              "fontFamily": "Noto Sans SC",
+              "fontSize": 13,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "kFXXl",
+          "name": "攀爬新动作",
+          "width": "fill_container",
+          "height": 206,
+          "fill": "#F0E4D4",
+          "cornerRadius": 14,
+          "gap": 24,
+          "padding": 20,
+          "alignItems": "center",
+          "children": [
+            {
+              "type": "frame",
+              "id": "VsCnJ",
+              "name": "爬窗新动作",
+              "clip": true,
+              "width": 130,
+              "height": 174,
+              "layout": "none",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "ziyI0",
+                  "x": 0,
+                  "y": 0,
+                  "name": "爬窗新动作 图像",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "../assets/sprites-extra/climb.png",
+                    "mode": "stretch"
+                  },
+                  "width": 520,
+                  "height": 174
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "oTB7b",
+              "name": "翻上窗沿新动作",
+              "clip": true,
+              "width": 130,
+              "height": 174,
+              "layout": "none",
+              "children": [
+                {
+                  "type": "rectangle",
+                  "id": "rZTIJ",
+                  "x": -390,
+                  "y": 0,
+                  "name": "翻上窗沿新动作 图像",
+                  "fill": {
+                    "type": "image",
+                    "enabled": true,
+                    "url": "../assets/sprites-extra/ledge.png",
+                    "mode": "stretch"
+                  },
+                  "width": 520,
+                  "height": 174
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "LXemq",
+              "name": "攀爬动作说明",
+              "width": "fill_container",
+              "layout": "vertical",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "text",
+                  "id": "c59WQ",
+                  "name": "攀爬标题",
+                  "fill": "$ink",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "从窗口边上，爬到你身边。",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 18,
+                  "fontWeight": "600"
+                },
+                {
+                  "type": "text",
+                  "id": "E1mzVy",
+                  "name": "攀爬说明",
+                  "fill": "$muted",
+                  "textGrowth": "fixed-width",
+                  "width": "fill_container",
+                  "content": "走过去 → 攀爬 → 翻上窗沿 → 坐下陪伴",
+                  "lineHeight": 1.7,
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "V4Qt58",
+                  "name": "攀爬预览",
+                  "fill": "$accent",
+                  "content": "试试爬窗 ↗",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 13,
+                  "fontWeight": "600"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "fCyJS",
+          "name": "桌面活动控制",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 16,
+          "children": [
+            {
+              "type": "text",
+              "id": "tErpI",
+              "name": "桌面活动标题",
+              "fill": "$ink",
+              "content": "桌面活动",
+              "fontFamily": "Noto Sans SC",
+              "fontSize": 15,
+              "fontWeight": "normal"
+            },
+            {
+              "type": "frame",
+              "id": "srQ7c",
+              "name": "活动操作",
+              "width": "fill_container",
+              "gap": 10,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "XQD9Z",
+                  "name": "去走走 按钮",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 9,
+                  "stroke": "$line",
+                  "strokeWidth": 1,
+                  "padding": [
+                    9,
+                    14
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "p2kXC",
+                      "name": "去走走 标签",
+                      "fill": "$ink",
+                      "content": "去走走",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "eKaxq",
+                  "name": "爬上窗口 按钮",
+                  "fill": "$accent",
+                  "cornerRadius": 9,
+                  "stroke": "$line",
+                  "strokeWidth": 1,
+                  "padding": [
+                    9,
+                    14
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "r8FvQ",
+                      "name": "爬上窗口 标签",
+                      "fill": "#FFFFFF",
+                      "content": "爬上窗口",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "w62RK",
+                  "name": "停步／下来 按钮",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 9,
+                  "stroke": "$line",
+                  "strokeWidth": 1,
+                  "padding": [
+                    9,
+                    14
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "fsacb",
+                      "name": "停步／下来 标签",
+                      "fill": "$ink",
+                      "content": "停步／下来",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "s93sGp",
+                  "name": "暂停活动 按钮",
+                  "fill": "#FFFFFF",
+                  "cornerRadius": 9,
+                  "stroke": "$line",
+                  "strokeWidth": 1,
+                  "padding": [
+                    9,
+                    14
+                  ],
+                  "children": [
+                    {
+                      "type": "text",
+                      "id": "kJ6BF",
+                      "name": "暂停活动 标签",
+                      "fill": "$ink",
+                      "content": "暂停活动",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "THMko",
+              "name": "选择显示器",
+              "width": "fill_container",
+              "cornerRadius": 9,
+              "stroke": "$line",
+              "strokeWidth": 1,
+              "padding": [
+                10,
+                12
+              ],
+              "justifyContent": "space_between",
+              "alignItems": "center",
+              "children": [
+                {
+                  "type": "text",
+                  "id": "QFkrw",
+                  "name": "当前显示器",
+                  "fill": "$ink",
+                  "content": "1 · 当前屏幕",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 13,
+                  "fontWeight": "normal"
+                },
+                {
+                  "type": "text",
+                  "id": "lSD0Q",
+                  "name": "跨屏操作",
+                  "fill": "$accent",
+                  "content": "到这块屏幕  ↗",
+                  "fontFamily": "Noto Sans SC",
+                  "fontSize": 12,
+                  "fontWeight": "normal"
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "NlIVZ",
+              "name": "活动偏好",
+              "width": "fill_container",
+              "gap": 24,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "S89uI",
+                  "name": "自主走动 选项",
+                  "gap": 7,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "S4nDNa",
+                      "name": "自主走动 勾选",
+                      "width": 15,
+                      "height": 15,
+                      "icon": "square-check",
+                      "library": "lucide",
+                      "fill": "$accent"
+                    },
+                    {
+                      "type": "text",
+                      "id": "Z0Sc5",
+                      "name": "自主走动 说明",
+                      "fill": "$muted",
+                      "content": "自主走动",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Jt0FL",
+                  "name": "自动爬窗 选项",
+                  "gap": 7,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "MOT0s",
+                      "name": "自动爬窗 勾选",
+                      "width": 15,
+                      "height": 15,
+                      "icon": "square-check",
+                      "library": "lucide",
+                      "fill": "$accent"
+                    },
+                    {
+                      "type": "text",
+                      "id": "MhqGp",
+                      "name": "自动爬窗 说明",
+                      "fill": "$muted",
+                      "content": "自动爬窗",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "QUPI0",
+                  "name": "允许跨屏 选项",
+                  "gap": 7,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "y4OXs",
+                      "name": "允许跨屏 勾选",
+                      "width": 15,
+                      "height": 15,
+                      "icon": "square-check",
+                      "library": "lucide",
+                      "fill": "$accent"
+                    },
+                    {
+                      "type": "text",
+                      "id": "u9mLe",
+                      "name": "允许跨屏 说明",
+                      "fill": "$muted",
+                      "content": "允许跨屏",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "RIdR8",
+                  "name": "全屏时隐藏 选项",
+                  "gap": 7,
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "icon",
+                      "id": "tfhvU",
+                      "name": "全屏时隐藏 勾选",
+                      "width": 15,
+                      "height": 15,
+                      "icon": "square-check",
+                      "library": "lucide",
+                      "fill": "$accent"
+                    },
+                    {
+                      "type": "text",
+                      "id": "JAU0Q",
+                      "name": "全屏时隐藏 说明",
+                      "fill": "$muted",
+                      "content": "全屏时隐藏",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "id": "Y1UAX",
+              "name": "活动反馈",
+              "fill": "$muted",
+              "content": "拖动随时打断；任务、专注和安静时段中暂停自主活动。",
+              "fontFamily": "Noto Sans SC",
+              "fontSize": 12,
+              "fontWeight": "normal"
+            }
+          ]
+        },
+        {
+          "type": "frame",
+          "id": "WAHmq",
+          "name": "动作选择器",
+          "width": "fill_container",
+          "layout": "vertical",
+          "gap": 14,
+          "children": [
+            {
+              "type": "frame",
+              "id": "srfWr",
+              "name": "动作行",
+              "width": "fill_container",
+              "gap": 14,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "o3zQQ",
+                  "name": "挥挥手 预览",
+                  "width": "fill_container",
+                  "fill": "#F6F2EB",
+                  "cornerRadius": 10,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": [
+                    10,
+                    6
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "fzcGi",
+                      "name": "挥挥手 角色",
+                      "clip": true,
+                      "width": 65,
+                      "height": 80,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "P0OtL8",
+                          "x": 0,
+                          "y": 0,
+                          "name": "挥挥手 角色 图像",
+                          "fill": {
+                            "type": "image",
+                            "enabled": true,
+                            "url": "../assets/sprites/wave.png",
+                            "mode": "stretch"
+                          },
+                          "width": 260,
+                          "height": 80
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "iIZi6",
+                      "name": "挥挥手 名称",
+                      "fill": "$ink",
+                      "content": "挥挥手",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "REZnS",
+                  "name": "伸个懒腰 预览",
+                  "width": "fill_container",
+                  "fill": "#F6F2EB",
+                  "cornerRadius": 10,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": [
+                    10,
+                    6
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "Sk06B",
+                      "name": "伸个懒腰 角色",
+                      "clip": true,
+                      "width": 65,
+                      "height": 80,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "j4dql",
+                          "x": 0,
+                          "y": 0,
+                          "name": "伸个懒腰 角色 图像",
+                          "fill": {
+                            "type": "image",
+                            "enabled": true,
+                            "url": "../assets/sprites/stretch.png",
+                            "mode": "stretch"
+                          },
+                          "width": 260,
+                          "height": 80
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "aLL4e",
+                      "name": "伸个懒腰 名称",
+                      "fill": "$ink",
+                      "content": "伸个懒腰",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "Zn8kz",
+                  "name": "看看内容 预览",
+                  "width": "fill_container",
+                  "fill": "#F6F2EB",
+                  "cornerRadius": 10,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": [
+                    10,
+                    6
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "xL7BY",
+                      "name": "看看内容 角色",
+                      "clip": true,
+                      "width": 65,
+                      "height": 80,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "aIhRL",
+                          "x": 0,
+                          "y": 0,
+                          "name": "看看内容 角色 图像",
+                          "fill": {
+                            "type": "image",
+                            "enabled": true,
+                            "url": "../assets/sprites/magnify.png",
+                            "mode": "stretch"
+                          },
+                          "width": 260,
+                          "height": 80
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "mzJUl",
+                      "name": "看看内容 名称",
+                      "fill": "$ink",
+                      "content": "看看内容",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "d4umJ6",
+                  "name": "读一会儿 预览",
+                  "width": "fill_container",
+                  "fill": "#F6F2EB",
+                  "cornerRadius": 10,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": [
+                    10,
+                    6
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "T5PQWp",
+                      "name": "读一会儿 角色",
+                      "clip": true,
+                      "width": 65,
+                      "height": 80,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "GtIfr",
+                          "x": 0,
+                          "y": 0,
+                          "name": "读一会儿 角色 图像",
+                          "fill": {
+                            "type": "image",
+                            "enabled": true,
+                            "url": "../assets/sprites/read.png",
+                            "mode": "stretch"
+                          },
+                          "width": 260,
+                          "height": 80
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "hL84r",
+                      "name": "读一会儿 名称",
+                      "fill": "$ink",
+                      "content": "读一会儿",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "frame",
+              "id": "C5L4K",
+              "name": "动作行",
+              "width": "fill_container",
+              "gap": 14,
+              "children": [
+                {
+                  "type": "frame",
+                  "id": "i304di",
+                  "name": "跳支舞 预览",
+                  "width": "fill_container",
+                  "fill": "#F6F2EB",
+                  "cornerRadius": 10,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": [
+                    10,
+                    6
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "B0j53X",
+                      "name": "跳支舞 角色",
+                      "clip": true,
+                      "width": 65,
+                      "height": 80,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "h7oH4",
+                          "x": 0,
+                          "y": 0,
+                          "name": "跳支舞 角色 图像",
+                          "fill": {
+                            "type": "image",
+                            "enabled": true,
+                            "url": "../assets/sprites/dance.png",
+                            "mode": "stretch"
+                          },
+                          "width": 260,
+                          "height": 80
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "iXrwc",
+                      "name": "跳支舞 名称",
+                      "fill": "$ink",
+                      "content": "跳支舞",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "oNCP7",
+                  "name": "走两步 预览",
+                  "width": "fill_container",
+                  "fill": "#F6F2EB",
+                  "cornerRadius": 10,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": [
+                    10,
+                    6
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "S2Jab",
+                      "name": "走两步 角色",
+                      "clip": true,
+                      "width": 65,
+                      "height": 80,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "wpcN3",
+                          "x": 0,
+                          "y": 0,
+                          "name": "走两步 角色 图像",
+                          "fill": {
+                            "type": "image",
+                            "enabled": true,
+                            "url": "../assets/sprites/walk.png",
+                            "mode": "stretch"
+                          },
+                          "width": 260,
+                          "height": 80
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "H89Ry",
+                      "name": "走两步 名称",
+                      "fill": "$ink",
+                      "content": "走两步",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "EENt7",
+                  "name": "喝点水 预览",
+                  "width": "fill_container",
+                  "fill": "#F6F2EB",
+                  "cornerRadius": 10,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": [
+                    10,
+                    6
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "UfycK",
+                      "name": "喝点水 角色",
+                      "clip": true,
+                      "width": 65,
+                      "height": 80,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "ID4kH",
+                          "x": 0,
+                          "y": 0,
+                          "name": "喝点水 角色 图像",
+                          "fill": {
+                            "type": "image",
+                            "enabled": true,
+                            "url": "../assets/sprites/water.png",
+                            "mode": "stretch"
+                          },
+                          "width": 260,
+                          "height": 80
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "Ut6Oq",
+                      "name": "喝点水 名称",
+                      "fill": "$ink",
+                      "content": "喝点水",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                },
+                {
+                  "type": "frame",
+                  "id": "f4q0D",
+                  "name": "打个盹 预览",
+                  "width": "fill_container",
+                  "fill": "#F6F2EB",
+                  "cornerRadius": 10,
+                  "layout": "vertical",
+                  "gap": 8,
+                  "padding": [
+                    10,
+                    6
+                  ],
+                  "alignItems": "center",
+                  "children": [
+                    {
+                      "type": "frame",
+                      "id": "sqBd1",
+                      "name": "打个盹 角色",
+                      "clip": true,
+                      "width": 65,
+                      "height": 80,
+                      "layout": "none",
+                      "children": [
+                        {
+                          "type": "rectangle",
+                          "id": "xEF4U",
+                          "x": 0,
+                          "y": 0,
+                          "name": "打个盹 角色 图像",
+                          "fill": {
+                            "type": "image",
+                            "enabled": true,
+                            "url": "../assets/sprites/nap.png",
+                            "mode": "stretch"
+                          },
+                          "width": 260,
+                          "height": 80
+                        }
+                      ]
+                    },
+                    {
+                      "type": "text",
+                      "id": "XeDhL",
+                      "name": "打个盹 名称",
+                      "fill": "$ink",
+                      "content": "打个盹",
+                      "fontFamily": "Noto Sans SC",
+                      "fontSize": 12,
+                      "fontWeight": "normal"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+

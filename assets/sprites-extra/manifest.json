@@ -8,7 +8,12 @@
       "fps": 5,
       "loop": true,
       "displayHeight": 204,
-      "offsetY": 18
+      "offsetsY": [
+        18.597,
+        18.597,
+        18.597,
+        18.597
+      ]
     },
     "ledge": {
       "file": "ledge.png",
@@ -18,7 +23,12 @@
       "fps": 4,
       "loop": false,
       "displayHeight": 204,
-      "offsetY": 18
+      "offsetsY": [
+        27.613,
+        22.823,
+        18.315,
+        44.519
+      ]
     }
   },
   "source": "Generated with built-in image_gen from the original wave sprite, preserving character identity and transparent background.",
