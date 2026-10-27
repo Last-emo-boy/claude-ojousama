@@ -26,12 +26,29 @@ def require(condition, message):
 
 def wait_for(read, ready, label):
     deadline = time.monotonic() + 10
+    result = None
     while time.monotonic() < deadline:
         result = read()
         if ready(result):
             return result
         time.sleep(0.1)
-    raise AssertionError('Timed out waiting for ' + label)
+    raise AssertionError('Timed out waiting for ' + label + '; last observation=' + json.dumps(result)[:3000])
+
+
+def diagnose_desktop(log, processes):
+    print('Controlled child states: ' + json.dumps([{'pid': p.pid, 'exit': p.poll()} for p in processes]), file=log, flush=True)
+    for command in [
+        ['wmctrl', '-m'],
+        ['wmctrl', '-l', '-p', '-G'],
+        ['xprop', '-root', '_NET_SUPPORTING_WM_CHECK', '_NET_CLIENT_LIST_STACKING', '_NET_CURRENT_DESKTOP', '_NET_ACTIVE_WINDOW'],
+        ['xwininfo', '-root', '-tree'],
+    ]:
+        print('Independent X11 diagnostic: ' + ' '.join(command), file=log, flush=True)
+        try:
+            result = subprocess.run(command, stdout=log, stderr=log, timeout=3, check=False)
+            print('Diagnostic exit: ' + str(result.returncode), file=log, flush=True)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            print('Diagnostic unavailable: ' + str(error), file=log, flush=True)
 
 
 def stop(process):
@@ -181,6 +198,7 @@ def main():
                 print(json.dumps({'status': 'PASS', 'native': ['capabilities', 'foreground', 'windows', 'rect', 'procs', 'invalid-handle', 'OCR'],
                     'title': TITLE, 'bounds': expected, 'ocr': text.strip()}))
             except Exception:
+                diagnose_desktop(log, processes)
                 log.flush()
                 log.seek(0)
                 sys.stderr.write(log.read())
