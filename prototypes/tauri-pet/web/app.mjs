@@ -1,4 +1,4 @@
-import { isActive, orderedTasks, upsertTask, currentTask, selectedTask, presentation, settingsFrom, pendingKey, placeBands, mirrorBands } from './model.mjs'
+import { isActive, orderedTasks, upsertTask, currentTask, selectedTask, restoredSelection, presentation, settingsFrom, pendingKey, placeBands, mirrorBands } from './model.mjs'
 import { createDragQueue } from './drag.mjs'
 import { mountCompanion } from './companion.mjs'
 import { createBubbleState } from './bubble.mjs'
@@ -465,7 +465,7 @@ function mountPanel() {
 }
 
 async function closePanel() {
-  await invoke('hide_panel',{viewState:{companion:companionPanel?.snapshot(),selected:state.selected,scrollY:window.scrollY,focus:document.activeElement?.id,
+  await invoke('hide_panel',{viewState:{companion:companionPanel?.snapshot(),selected:state.selected,taskIds:state.tasks.map(task=>task.id),scrollY:window.scrollY,focus:document.activeElement?.id,
     pending:{key:state.questionKey,fields:readFields($('pending'))},scrolls:Object.fromEntries(['task-history','detail-output'].map(id=>[id,$(id).scrollTop]))}})
 }
 
@@ -644,7 +644,7 @@ async function boot() {
     await loadSprites()
   }
   const initial = await invoke('bootstrap')
-  if(view==='panel')state.selected=initial.panelState?.selected??null
+  if(view==='panel')state.selected=restoredSelection(initial.tasks||[],initial.panelState)
   for (const task of initial.tasks || []) {
     state.tasks = upsertTask(state.tasks, task, { snapshot: true })
   }

@@ -1,6 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readDrafts, restoreDrafts } from './panel-state.mjs'
+import { restoredSelection } from './model.mjs'
+
+test('reopening selects tasks created while unloaded but preserves deliberate history otherwise', () => {
+  const tasks=[{id:1,createdAt:10},{id:2,createdAt:20},{id:3,createdAt:30}]
+  assert.equal(restoredSelection(tasks,{selected:1,taskIds:[1,2]}),3)
+  assert.equal(restoredSelection(tasks,{selected:1,taskIds:[1,2,3]}),1)
+  assert.equal(restoredSelection(tasks,{selected:1,taskIds:[]}),3)
+  assert.equal(restoredSelection(tasks,null),null)
+})
 
 function fixture() {
   const fields=[{id:'model',type:'text',value:'unsaved'},{id:'enabled',type:'checkbox',checked:false},

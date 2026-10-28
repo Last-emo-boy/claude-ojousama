@@ -32,6 +32,13 @@ export function selectedTask(tasks, id) {
   return tasks.find(task => task.id === id) || currentTask(tasks)
 }
 
+export function restoredSelection(tasks, saved) {
+  // The resident panel used to select each newly created task even while hidden.
+  // Replay that selection when its renderer was absent; otherwise keep history.
+  const unseen = Array.isArray(saved?.taskIds) ? tasks.filter(task => !saved.taskIds.includes(task.id)) : []
+  return orderedTasks(unseen)[0]?.id ?? saved?.selected ?? null
+}
+
 export function presentation(task, motion = 'settled') {
   const [label, animation, fallback] = STATUS[task?.status] || ['待命', 'idle', '有事叫我']
   return {
