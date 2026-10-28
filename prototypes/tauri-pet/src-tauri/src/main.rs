@@ -319,10 +319,9 @@ fn open_panel(
             window.show().map_err(|e| e.to_string())?;
             window.set_focus().map_err(|e| e.to_string())?;
         } else if session.parked {
-            let mut url = window.url().map_err(|e| e.to_string())?;
-            url.set_path("/index.html");
-            url.set_query(Some("view=panel"));
-            window.navigate(url).map_err(|e| e.to_string())?;
+            window
+                .eval("location.replace('index.html?view=panel')")
+                .map_err(|e| e.to_string())?;
             session.parked = false;
         }
         return Ok(());
@@ -406,11 +405,12 @@ fn hide_panel(
     session.size = window.inner_size().ok().map(|s| (s.width, s.height));
     // Keep the native accessibility/window identity stable. Navigating away drops
     // the panel DOM, listeners and render resources without retaining a hidden UI.
-    let mut url = window.url().map_err(|e| e.to_string())?;
-    url.set_path("/park.html");
-    url.set_query(None);
     window.hide().map_err(|e| e.to_string())?;
-    window.navigate(url).map_err(|e| e.to_string())?;
+    // Replace, not a history navigation: a back/forward cache must not retain
+    // the full settings page behind the otherwise empty parked document.
+    window
+        .eval("location.replace('park.html')")
+        .map_err(|e| e.to_string())?;
     session.ready = false;
     session.parked = true;
     Ok(())
