@@ -12,20 +12,38 @@ pub struct Target {
 #[derive(Default)]
 pub struct Session {
     pub view: Value,
-    pub ready: bool,
-    pub parked: bool,
-    pub target: Target,
+    pub phase: Phase,
+    pending: Option<Target>,
     pub position: Option<(i32, i32)>,
     pub size: Option<(u32, u32)>,
 }
 
+#[derive(Default, PartialEq, Debug)]
+pub enum Phase {
+    #[default]
+    Dormant,
+    Loading,
+    Ready,
+    Closing,
+}
+
 impl Session {
     pub fn request(&mut self, tab: Option<String>, task_id: Option<u64>) {
-        self.target = Target { tab, task_id };
+        self.pending = Some(Target { tab, task_id });
     }
 
     pub fn take_target(&mut self) -> Target {
-        std::mem::take(&mut self.target)
+        self.pending.take().unwrap_or_default()
+    }
+
+    pub fn begin_close(&mut self) {
+        self.phase = Phase::Closing;
+        self.pending = None;
+    }
+
+    pub fn closed(&mut self) -> Option<Target> {
+        self.phase = Phase::Dormant;
+        self.pending.take()
     }
 }
 
@@ -55,5 +73,20 @@ mod tests {
         assert!(session.take_target().tab.is_none());
         assert_eq!(session.position, Some((-100, 80)));
         assert_eq!(session.size, Some((1120, 1080)));
+    }
+    #[test]
+    fn reopening_during_deferred_native_destruction_is_delivered_after_destroyed() {
+        let mut session = Session::default();
+        session.begin_close();
+        session.request(Some("settings".into()), None);
+        session.request(Some("tasks".into()), Some(42));
+        assert_eq!(session.phase, Phase::Closing);
+        let target = session.closed().unwrap();
+        assert_eq!(target.tab.as_deref(), Some("tasks"));
+        assert_eq!(target.task_id, Some(42));
+        assert_eq!(session.phase, Phase::Dormant);
+        assert!(session.closed().is_none());
+        session.begin_close();
+        assert!(session.closed().is_none());
     }
 }

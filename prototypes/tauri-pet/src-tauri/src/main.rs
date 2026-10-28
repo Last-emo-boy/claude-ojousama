@@ -311,22 +311,20 @@ fn open_panel(
     let state = app.state::<State>();
     let mut session = state.panel.lock().unwrap();
     session.request(tab, task_id);
+    if session.phase == panel::Phase::Closing {
+        return Ok(());
+    }
     if let Some(window) = app.get_webview_window("panel") {
-        if session.ready {
+        if session.phase == panel::Phase::Ready {
             window
                 .emit("panel:open", session.take_target())
                 .map_err(|e| e.to_string())?;
             window.show().map_err(|e| e.to_string())?;
             window.set_focus().map_err(|e| e.to_string())?;
-        } else if session.parked {
-            window
-                .eval("location.replace('index.html?view=panel')")
-                .map_err(|e| e.to_string())?;
-            session.parked = false;
         }
         return Ok(());
     }
-    session.ready = false;
+    session.phase = panel::Phase::Loading;
     let window = WebviewWindowBuilder::new(
         app,
         "panel",
@@ -348,12 +346,27 @@ fn open_panel(
             .set_position(PhysicalPosition::new(x, y))
             .map_err(|e| e.to_string())?;
     }
-    let closing = window.clone();
+    let handle = app.clone();
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
             api.prevent_close();
-            if let Err(error) = closing.emit("panel:close", ()) {
+            if let Err(error) = handle.emit_to("panel", "panel:close", ()) {
                 eprintln!("panel close: {error}");
+            }
+        } else if matches!(event, tauri::WindowEvent::Destroyed) {
+            // Tauri removes the old label before this callback. Creation still
+            // runs off the native event thread for WebView2 compatibility.
+            let state = handle.state::<State>();
+            let pending = state.panel.lock().unwrap().closed();
+            if !state.stop.load(Ordering::Relaxed) {
+                if let Some(target) = pending {
+                    let app = handle.clone();
+                    std::thread::spawn(move || {
+                        if let Err(error) = open_panel(&app, target.tab, target.task_id) {
+                            let _ = app.emit("pet:error", error);
+                        }
+                    });
+                }
             }
         }
     });
@@ -380,8 +393,7 @@ async fn show_panel(
 fn panel_ready(window: WebviewWindow, state: tauri::State<State>) -> Result<(), String> {
     panel_only(&window)?;
     let mut session = state.panel.lock().unwrap();
-    session.ready = true;
-    session.parked = false;
+    session.phase = panel::Phase::Ready;
     window
         .emit("panel:open", session.take_target())
         .map_err(|e| e.to_string())?;
@@ -403,16 +415,9 @@ fn hide_panel(
     }
     session.position = window.outer_position().ok().map(|p| (p.x, p.y));
     session.size = window.inner_size().ok().map(|s| (s.width, s.height));
-    // Keep the native accessibility/window identity stable. Navigating away drops
-    // the panel DOM, listeners and render resources without retaining a hidden UI.
     window.hide().map_err(|e| e.to_string())?;
-    // Replace, not a history navigation: a back/forward cache must not retain
-    // the full settings page behind the otherwise empty parked document.
-    window
-        .eval("location.replace('park.html')")
-        .map_err(|e| e.to_string())?;
-    session.ready = false;
-    session.parked = true;
+    window.destroy().map_err(|e| e.to_string())?;
+    session.begin_close();
     Ok(())
 }
 #[tauri::command]

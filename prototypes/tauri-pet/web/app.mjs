@@ -40,8 +40,6 @@ let shownAlertToken = null
 let bubbleTimer
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)')
 const invoke = (command, args) => window.__TAURI__.core.invoke(command, args)
-const subscriptions = []
-async function listen(name, handler) { subscriptions.push(await window.__TAURI__.event.listen(name, handler)) }
 const $ = id => document.getElementById(id)
 const errorText = error => error instanceof Error ? error.message : String(error)
 const short = (text, limit = 80) => String(text || '').replace(/\s+/g, ' ').trim().slice(0, limit)
@@ -467,10 +465,8 @@ function mountPanel() {
 }
 
 async function closePanel() {
-  const viewState={companion:companionPanel?.snapshot(),selected:state.selected,scrollY:window.scrollY,focus:document.activeElement?.id,
-    pending:{key:state.questionKey,fields:readFields($('pending'))},scrolls:Object.fromEntries(['task-history','detail-output'].map(id=>[id,$(id).scrollTop]))}
-  for (const unlisten of subscriptions.splice(0)) await unlisten()
-  await invoke('hide_panel',{viewState})
+  await invoke('hide_panel',{viewState:{companion:companionPanel?.snapshot(),selected:state.selected,scrollY:window.scrollY,focus:document.activeElement?.id,
+    pending:{key:state.questionKey,fields:readFields($('pending'))},scrolls:Object.fromEntries(['task-history','detail-output'].map(id=>[id,$(id).scrollTop]))}})
 }
 
 function renderPanel() {
@@ -630,16 +626,16 @@ async function boot() {
   if (view === 'pet') mountPet()
   else mountPanel()
   if (!window.__TAURI__) throw new Error('请从 Claude Ojousama 应用打开这个界面')
-  await listen('task:update', event => acceptTask(event.payload))
-  if(view==='panel') await listen('task:select',event=>{
+  await window.__TAURI__.event.listen('task:update', event => acceptTask(event.payload))
+  if(view==='panel') await window.__TAURI__.event.listen('task:select',event=>{
     state.selected=event.payload
     if(state.tasks.some(task=>task.id===event.payload))renderPanel()
   })
   if (view === 'pet') {
-    await listen('companion:alert',event=>{bubbles.alert(event.payload);renderPet()})
-    await listen('clipboard:offer',event=>{bubbles.clipboard(event.payload);renderPet()})
-    await listen('pet:error', event => showError(event.payload))
-  await listen('motion:update', event => {
+    await window.__TAURI__.event.listen('companion:alert',event=>{bubbles.alert(event.payload);renderPet()})
+    await window.__TAURI__.event.listen('clipboard:offer',event=>{bubbles.clipboard(event.payload);renderPet()})
+    await window.__TAURI__.event.listen('pet:error', event => showError(event.payload))
+  await window.__TAURI__.event.listen('motion:update', event => {
       if((event.payload.generation||0)<(state.motion.generation||0))return
       state.motion = event.payload
       renderPet()
@@ -659,10 +655,10 @@ async function boot() {
   if (view === 'pet') {bubbles.task(currentTask(state.tasks), { snapshot: true });bubbles.alert(initial.companion?.alert);bubbles.clipboard(initial.companion?.clipboard?.offer)}
   if (view === 'panel' && initial.companion) {
     companionPanel = mountCompanion({invoke, initial: initial.companion, showError, platform:state.platform, onTasks: () => companionPanel.select('tasks')})
-    await listen('companion:update', event => companionPanel.update(event.payload))
+    await window.__TAURI__.event.listen('companion:update', event => companionPanel.update(event.payload))
     companionPanel.restore(initial.panelState?.companion)
-    await listen('panel:close',()=>closePanel().catch(showError))
-    await listen('panel:open', event => {
+    await window.__TAURI__.event.listen('panel:close',()=>closePanel().catch(showError))
+    await window.__TAURI__.event.listen('panel:open', event => {
       if(event.payload.taskId!=null){state.selected=event.payload.taskId;renderPanel()}
       if(event.payload.tab)companionPanel.select(event.payload.tab,{focus:true})
       if(event.payload.tab==='tasks') {
@@ -673,19 +669,19 @@ async function boot() {
         }
       }
     })
-    await listen('motion:update',event=>companionPanel.motionUpdated(event.payload))
+    await window.__TAURI__.event.listen('motion:update',event=>companionPanel.motionUpdated(event.payload))
   } else if (view === 'pet') {
     petCompanion=initial.companion
     if(petCompanion?.notice)bubbles.speak(petCompanion.notice)
-    await listen('companion:update',event=>{petCompanion=event.payload;renderPet()})
-    await listen('pet:compose',()=>openPetComposer().catch(showError))
+    await window.__TAURI__.event.listen('companion:update',event=>{petCompanion=event.payload;renderPet()})
+    await window.__TAURI__.event.listen('pet:compose',()=>openPetComposer().catch(showError))
     const clipboardRequest=async()=>{if(await invoke('clipboard_pending'))await previewPetClipboard()}
     const clipboardOffer=async()=>{if(await invoke('clipboard_offer_pending'))await previewPetClipboard(true)}
-    await listen('clipboard:request',()=>clipboardRequest().catch(showError))
-    await listen('clipboard:offer-request',()=>clipboardOffer().catch(showError))
+    await window.__TAURI__.event.listen('clipboard:request',()=>clipboardRequest().catch(showError))
+    await window.__TAURI__.event.listen('clipboard:offer-request',()=>clipboardOffer().catch(showError))
     await clipboardRequest();await clipboardOffer()
-    await listen('companion:action', event => {if(event.payload.kind==='note.show')invoke('note_show').catch(showError)})
-    await listen('companion:bubble', event => {
+    await window.__TAURI__.event.listen('companion:action', event => {if(event.payload.kind==='note.show')invoke('note_show').catch(showError)})
+    await window.__TAURI__.event.listen('companion:bubble', event => {
       companionBubble = event.payload
       bubbles.speak(companionBubble)
       renderPet()
