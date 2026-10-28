@@ -102,18 +102,18 @@ export function mountCompanion({invoke,initial,showError,platform}){
     const d=current.data, list=$('record-items');list.replaceChildren();tasks.hidden=filter!=='tasks'
     for(const b of $('record-filters').children)b.setAttribute('aria-current',String(b.dataset.filter===filter))
     if(filter==='activity'){
-      for(const t of d.backgroundTasks||[])list.append(row(backgroundText(t),`${backgroundLabel(t.kind)} · ${t.automatic?'自动':'手动'} · ${date(t.at)}`,t.kind==='reflect'?'':t.result))
+      for(const t of d.backgroundTasks||[]){const n=row(backgroundText(t),`${backgroundLabel(t.kind)} · ${t.automatic?'自动':'手动'} · ${date(t.at)}`);if(t.kind==='summary')n.append(button('打开小结','summary:open',{id:t.id,at:t.at}));list.append(n)}
       for(const a of d.activity||[])list.append(row(a.text,date(a.ts)))
     }else if(filter==='chat'){
       for(const m of (d.chat.messages||[]).slice(-100))list.append(row(m.text,`${m.role==='user'?'你':'大小姐'} · ${date(m.ts)}`))
     }else if(filter==='tasks'){
-      for(const t of d.tasks||[])list.append(row(t.title||t.prompt,`${t.status} · ${date(t.startedAt)}`,t.result||t.error))
+      for(const t of d.tasks||[]){const n=row(t.title||t.prompt,`${t.status} · ${date(t.startedAt)}`,t.result||t.error);n.append(button('重新开始','legacy:retry',{id:t.id}));list.append(n)}
     }else if(filter==='todos'){
       for(const a of d.alerts||[])list.append(row(a.text,`待处理 · ${date(a.createdAt)}`))
       for(const t of d.todos||[]){const n=row(t.text,t.done?'已完成':date(t.due));n.append(button(t.done?'重新打开':'已完成','todo:update',{id:t.id,patch:{done:!t.done}}),button('移除','todo:remove',{id:t.id}));list.append(n)}
       for(const r of d.reminders||[]){const n=row(r.text,`${date(r.at)}${r.fired?' · 已提醒':''}`);n.append(button('移除','reminder:remove',{id:r.id}));list.append(n)}
     }else if(filter==='goals'){
-      for(const g of d.goals||[]){const n=row(g.title,`${({active:'进行中',paused:'已暂停',waiting:'等待回答',done:'已完成'})[g.status]||g.status} · 下次 ${date(g.nextAt)}`,g.detail);n.append(button(g.status==='active'?'暂停':'继续','goal:update',{id:g.id,patch:{status:g.status==='active'?'paused':'active'}}),button('移除','goal:remove',{id:g.id}));for(const l of (g.log||[]).slice(-3))n.append(text('p',`${date(l.ts)} ${l.text}`,'record-body'));list.append(n)}
+      for(const g of d.goals||[]){const n=row(g.title,`${({active:'进行中',paused:'已暂停',waiting:'等待回答',done:'已完成'})[g.status]||g.status} · 下次 ${date(g.nextAt)}`,g.detail);n.append(button('推进一步','goal:run',{id:g.id}),button(g.status==='active'?'暂停':'继续','goal:update',{id:g.id,patch:{status:g.status==='active'?'paused':'active'}}),button('移除','goal:remove',{id:g.id}));for(const l of (g.log||[]).slice(-3))n.append(text('p',`${date(l.ts)} ${l.text}`,'record-body'));list.append(n)}
     }else if(filter==='files'){
       for(const g of fileGroups(d.watch?.ready))list.append(row(`${g.files.length} 个新文件`,g.folder,g.files.map(f=>f.name).join('、')))
       if(d.tidyLog?.moves?.length)list.append(button('撤销上次整理','tidy:undo',{}))

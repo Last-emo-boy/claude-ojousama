@@ -284,12 +284,16 @@ impl Service {
                 let folder = notice.context["folder"].as_str().ok_or("文件夹记录无效")?;
                 let expected = notice.context["files"].as_array().ok_or("新文件记录无效")?;
                 let current = file_watch::selected(&self.data.snapshot(), folder);
-                if !expected.iter().all(|f| current.contains(f)) {
+                if expected.is_empty() || !expected.iter().all(|f| current.contains(f)) {
                     return Err("这批文件已经变化，未执行旧操作".into());
                 }
+                let mut journal_id = None;
                 if choice == "tidy" {
                     let plan = utilities::tidy_selected(std::path::Path::new(folder), expected)?;
-                    utilities::tidy_apply_plan(&self.data, &plan)?;
+                    let moves = utilities::tidy_apply_plan(&self.data, &plan)?;
+                    if moves.as_array().is_some_and(|a| !a.is_empty()) {
+                        journal_id = Some(self.data.snapshot()["tidyLog"]["id"].clone());
+                    }
                 }
                 {
                     let _runtime = self.runtime.lock().unwrap();
@@ -298,11 +302,10 @@ impl Service {
                         Ok(())
                     })?;
                 }
-                if choice == "tidy" {
-                    self.undo_notice(
-                        "新文件整理好了，需要的话可以撤销。",
-                        self.data.snapshot()["tidyLog"]["id"].clone(),
-                    );
+                if let Some(id) = journal_id {
+                    self.undo_notice("新文件整理好了，需要的话可以撤销。", id);
+                } else if choice == "tidy" {
+                    self.say("这批文件没有需要整理的内容。", "wave");
                 }
             }
             ("result", "read") => {
@@ -4061,6 +4064,86 @@ mod pet_first_tests {
             .apply("notice:respond", json!({"token":token,"choice":"undo"}))
             .is_err());
         assert_eq!(s.data.snapshot()["tidyLog"], third);
+        s.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn inline_file_action_only_moves_the_offered_stable_batch_and_keeps_undo_local() {
+        let (s, root) = fixture("files");
+        let folder = root.join("watched");
+        std::fs::create_dir(&folder).unwrap();
+        let folder = std::fs::canonicalize(folder).unwrap();
+        let name = folder.to_str().unwrap();
+        s.apply(
+            "watch:set",
+            json!({"enabled":true,"folders":[name],"mode":"ask"}),
+        )
+        .unwrap();
+        let path = folder.join("new.txt");
+        std::fs::write(&path, b"controlled file").unwrap();
+        age(&path);
+        let f = file_watch::read(name).unwrap().files.remove(0);
+        let files = json!([{"folder":name,"name":f.name,"full":f.full,"size":f.size,"modified":f.modified}]);
+        s.data
+            .change(|d| {
+                d["watch"]["ready"] = files.clone();
+                Ok(())
+            })
+            .unwrap();
+        s.inline(
+            "有新文件",
+            "files",
+            json!({"folder":name,"files":files}),
+            json!([{"id":"tidy","label":"整理"}]),
+        );
+        let token = s.snapshot()["notice"]["token"].clone();
+        s.apply("notice:respond", json!({"token":token,"choice":"tidy"}))
+            .unwrap();
+        assert!(!path.exists());
+        assert!(s.data.snapshot()["watch"]["ready"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        assert_eq!(s.snapshot()["notice"]["kind"], "tidy");
+        let undo = s.snapshot()["notice"]["token"].clone();
+        s.apply("notice:respond", json!({"token":undo,"choice":"undo"}))
+            .unwrap();
+        assert!(path.is_file());
+        let journal = s.data.snapshot()["tidyLog"].clone();
+        s.inline(
+            "旧消息",
+            "files",
+            json!({"folder":name,"files":[]}),
+            json!([{"id":"tidy","label":"整理"}]),
+        );
+        let token = s.snapshot()["notice"]["token"].clone();
+        assert!(s
+            .apply("notice:respond", json!({"token":token,"choice":"tidy"}))
+            .is_err());
+        assert_eq!(s.data.snapshot()["tidyLog"], journal);
+        s.data
+            .change(|d| {
+                d["watch"]["ready"] = files.clone();
+                Ok(())
+            })
+            .unwrap();
+        s.inline(
+            "已撤回范围",
+            "files",
+            json!({"folder":name,"files":files}),
+            json!([{"id":"tidy","label":"整理"}]),
+        );
+        let token = s.snapshot()["notice"]["token"].clone();
+        s.apply(
+            "watch:set",
+            json!({"enabled":false,"folders":[name],"mode":"off"}),
+        )
+        .unwrap();
+        assert!(s
+            .apply("notice:respond", json!({"token":token,"choice":"tidy"}))
+            .is_err());
+        assert!(path.is_file());
+        assert!(s.tasks.list().is_empty());
         s.shutdown();
         std::fs::remove_dir_all(root).unwrap();
     }

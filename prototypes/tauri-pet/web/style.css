@@ -281,3 +281,4 @@ details.settings summary { cursor: pointer; width: fit-content; }
 .pet-bubble .pending-explanation p { margin: 4px 0; }
 .pet-bubble .pending-explanation pre { margin: 6px 0 0; padding: 6px; }
 .pet-bubble .pending-actions { margin-top: 7px; position: sticky; bottom: 0; padding-top: 3px; background: #fffcf6; }
+.pet-tools select { width: 100%; max-width: 100%; margin: 5px 0 0; }
