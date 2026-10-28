@@ -16,6 +16,7 @@ mod motion;
 mod observer;
 mod panel;
 mod service;
+mod sprites;
 mod utilities;
 mod windows;
 
@@ -405,6 +406,34 @@ fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+#[tauri::command]
+async fn sprite_bands(
+    window: WebviewWindow,
+    name: String,
+) -> Result<Vec<Vec<sprites::Band>>, String> {
+    if window.label() != "pet" {
+        return Err("请从桌宠加载角色动作".into());
+    }
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let assets = app.asset_resolver();
+        let manifest = assets
+            .get("assets/sprites/manifest.json".into())
+            .ok_or("缺少角色动作定义")?;
+        let manifest: sprites::Manifest =
+            serde_json::from_slice(&manifest.bytes).map_err(|e| e.to_string())?;
+        let sheet = manifest.anims.get(&name).ok_or("缺少角色动作")?;
+        let asset = assets
+            .get(format!("assets/sprites/{}", sheet.file))
+            .ok_or("缺少角色图集")?;
+        let image = image::load_from_memory_with_format(&asset.bytes, image::ImageFormat::Png)
+            .map_err(|e| e.to_string())?
+            .into_rgba8();
+        sprites::bands(&image, sheet)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 #[tauri::command]
 fn bootstrap(window: WebviewWindow, state: tauri::State<State>) -> Value {
     json!({ "platform":std::env::consts::OS, "positionable":state.positionable,
@@ -1911,6 +1940,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             bootstrap,
+            sprite_bands,
             desktop_status,
             clipboard_pending,
             clipboard_preview,

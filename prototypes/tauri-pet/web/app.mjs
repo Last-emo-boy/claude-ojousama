@@ -1,4 +1,4 @@
-import { isActive, orderedTasks, upsertTask, currentTask, selectedTask, presentation, settingsFrom, pendingKey, alphaBands, placeBands, mirrorBands } from './model.mjs'
+import { isActive, orderedTasks, upsertTask, currentTask, selectedTask, presentation, settingsFrom, pendingKey, placeBands, mirrorBands } from './model.mjs'
 import { createDragQueue } from './drag.mjs'
 import { mountCompanion } from './companion.mjs'
 import { createBubbleState } from './bubble.mjs'
@@ -272,18 +272,8 @@ async function readSheet(name) {
       image.onerror = () => reject(new Error(`无法加载角色动作：${name}`))
       image.src = `./assets/sprites/${definition.file}`
     })
-    const offscreen = document.createElement('canvas')
-    offscreen.width = image.width
-    offscreen.height = image.height
-    try {
-      const context = offscreen.getContext('2d', { willReadFrequently: true })
-      context.drawImage(image, 0, 0)
-      const pixels = context.getImageData(0, 0, image.width, image.height).data
-      const bands = Array.from({ length: definition.frames }, (_, frame) => alphaBands(pixels, image.width, frame, definition.w, definition.h))
-      return { image, bands, ...definition }
-    } finally {
-      offscreen.width = offscreen.height = 0
-    }
+    const bands = await invoke('sprite_bands', { name })
+    return { image, bands, ...definition }
 }
 
 function drawSprite() {
