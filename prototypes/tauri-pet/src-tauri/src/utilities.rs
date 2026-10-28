@@ -256,6 +256,11 @@ pub fn tidy_apply(data: &Companion) -> Result<Value, String> {
     Ok(result)
 }
 pub fn tidy_apply_plan(data: &Companion, plan: &Value) -> Result<Value, String> {
+    let operation = data.snapshot()["tidyLog"]["id"]
+        .as_u64()
+        .unwrap_or(0)
+        .max(companion::now())
+        + 1;
     if companion::now().saturating_sub(plan["at"].as_u64().unwrap_or(0)) > 600_000 {
         return Err("整理预览已过期，请重新预览".into());
     }
@@ -295,14 +300,16 @@ pub fn tidy_apply_plan(data: &Companion, plan: &Value) -> Result<Value, String> 
         let mut journal = completed.clone();
         journal.push(movement.clone());
         data.change(|d| {
-            d["tidyLog"] = json!({"at":companion::now(),"moves":journal,"dirs":dirs});
+            d["tidyLog"] =
+                json!({"id":operation,"at":companion::now(),"moves":journal,"dirs":dirs});
             Ok(())
         })?;
         move_exclusive(&from, &to)?;
         completed.push(movement.clone());
         // Journal every move, including partial runs, so undo never loses a move.
         data.change(|d| {
-            d["tidyLog"] = json!({"at":companion::now(),"moves":completed,"dirs":dirs});
+            d["tidyLog"] =
+                json!({"id":operation,"at":companion::now(),"moves":completed,"dirs":dirs});
             Ok(())
         })?;
     }

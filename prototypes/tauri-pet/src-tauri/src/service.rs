@@ -63,6 +63,14 @@ struct AlertDelivery {
     until: u64,
     shown: bool,
 }
+#[derive(Clone)]
+struct InlineNotice {
+    token: u64,
+    until: u64,
+    kind: &'static str,
+    context: Value,
+    payload: Value,
+}
 fn alert_notice(delivery: &AlertDelivery, alert: &Value) -> Value {
     let repeats = alert["count"]
         .as_u64()
@@ -108,6 +116,9 @@ struct Runtime {
     next_suggestion: u64,
     clipboard: clipboard_watch::State,
     files: FileState,
+    inline: Option<InlineNotice>,
+    notice_token: u64,
+    setup_offered: bool,
 }
 #[derive(Default)]
 struct FileState {
@@ -180,7 +191,7 @@ impl Service {
         } else {
             None
         };
-        json!({"files":{"error":r.files.error,"scanning":r.files.scanning,"pauseReason":files_pause},"agenda":agenda_status,"clipboard":{"offer":r.clipboard.notice(companion::now()),"error":r.clipboard.error,"supported":observer::screen_supported()},"data":data,"alert":alert,"chatTask":r.chat,"observer":{"status":r.status,"error":r.error,"running":running,"pauseReason":pause,"permission":observer::permission(),"capabilities":capabilities}})
+        json!({"notice":r.inline.as_ref().filter(|n|n.until>companion::now()).map(|n|n.payload.clone()),"files":{"error":r.files.error,"scanning":r.files.scanning,"pauseReason":files_pause},"agenda":agenda_status,"clipboard":{"offer":r.clipboard.notice(companion::now()),"error":r.clipboard.error,"supported":observer::screen_supported()},"data":data,"alert":alert,"chatTask":r.chat,"observer":{"status":r.status,"error":r.error,"running":running,"pauseReason":pause,"permission":observer::permission(),"capabilities":capabilities}})
     }
     pub fn changed(&self) {
         (self.emit)("companion:update", self.snapshot());
@@ -204,6 +215,132 @@ impl Service {
     }
     fn say_to(&self, text: &str, animation: &str, tab: &str) {
         self.bubble(text, animation, 12_000, false, tab);
+    }
+    fn inline(&self, text: &str, kind: &'static str, context: Value, buttons: Value) {
+        let now = companion::now();
+        let payload = {
+            let mut r = self.runtime.lock().unwrap();
+            r.notice_token = r.notice_token.max(now) + 1;
+            let token = r.notice_token;
+            let until = now + 20_000;
+            let payload = json!({"text":text,"animation":"wave","until":until,"token":token,"kind":kind,"tab":match kind{"tidy"|"files"=>"files","result"=>context["tab"].as_str().unwrap_or("growth"),_=>"chat"},"buttons":buttons});
+            r.inline = Some(InlineNotice {
+                token,
+                until,
+                kind,
+                context,
+                payload: payload.clone(),
+            });
+            payload
+        };
+        self.activity_until
+            .fetch_max(now + 12_000, Ordering::Relaxed);
+        (self.emit)("companion:bubble", payload);
+    }
+    fn undo_notice(&self, text: &str, id: Value) {
+        if id.is_null() || self.data.snapshot()["tidyLog"]["id"] != id {
+            self.say("新文件整理完成，记录已保存。", "wave");
+            return;
+        }
+        self.inline(
+            text,
+            "tidy",
+            json!({"id":id}),
+            json!([{"id":"undo","label":"撤销"}]),
+        );
+    }
+    fn respond_notice(&self, args: &Value) -> Result<Value, String> {
+        let choice = args["choice"].as_str().ok_or("请选择操作")?;
+        let notice = {
+            let mut r = self.runtime.lock().unwrap();
+            let n = r
+                .inline
+                .as_ref()
+                .filter(|n| {
+                    n.token == args["token"].as_u64().unwrap_or(0) && n.until > companion::now()
+                })
+                .ok_or("这条消息已过期，操作没有执行")?;
+            if !n.payload["buttons"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|b| b["id"] == choice)
+            {
+                return Err("这条消息不支持该操作".into());
+            }
+            r.inline.take().unwrap()
+        };
+        match (notice.kind, choice) {
+            ("tidy", "undo") => {
+                let _owner = self.tidy.lock().unwrap();
+                if self.data.snapshot()["tidyLog"]["id"] != notice.context["id"] {
+                    return Err("整理记录已经更新，没有撤销其他批次".into());
+                }
+                utilities::tidy_undo(&self.data)?;
+                self.say("刚才的整理已撤销。", "wave");
+            }
+            ("files", "tidy" | "skip") => {
+                let _owner = self.tidy.lock().unwrap();
+                let folder = notice.context["folder"].as_str().ok_or("文件夹记录无效")?;
+                let expected = notice.context["files"].as_array().ok_or("新文件记录无效")?;
+                let current = file_watch::selected(&self.data.snapshot(), folder);
+                if !expected.iter().all(|f| current.contains(f)) {
+                    return Err("这批文件已经变化，未执行旧操作".into());
+                }
+                if choice == "tidy" {
+                    let plan = utilities::tidy_selected(std::path::Path::new(folder), expected)?;
+                    utilities::tidy_apply_plan(&self.data, &plan)?;
+                }
+                {
+                    let _runtime = self.runtime.lock().unwrap();
+                    self.data.change(|d| {
+                        file_watch::remove_ready(d, |v| expected.contains(v));
+                        Ok(())
+                    })?;
+                }
+                if choice == "tidy" {
+                    self.undo_notice(
+                        "新文件整理好了，需要的话可以撤销。",
+                        self.data.snapshot()["tidyLog"]["id"].clone(),
+                    );
+                }
+            }
+            ("result", "read") => {
+                (self.emit)(
+                    "companion:bubble",
+                    json!({"text":notice.context["text"],"expanded":true,"animation":"read","until":companion::now()+30_000}),
+                );
+            }
+            ("setup", "configure") => return Ok(json!({"configure":true})),
+            _ => return Err("消息操作不可用".into()),
+        }
+        self.changed();
+        Ok(Value::Null)
+    }
+    fn offer_setup(&self, present: bool) -> bool {
+        let mut r = self.runtime.lock().unwrap();
+        let d = self.data.snapshot();
+        if !present
+            || r.stopping
+            || r.setup_offered
+            || d["settings"]["petSetupVersion"].as_u64().unwrap_or(0) > 0
+            || self.activity_busy()
+            || r.alert.is_some()
+            || r.job.is_some()
+            || r.preparing.is_some()
+            || attention_reason(&d, r.body_context, companion::now()).is_some()
+        {
+            return false;
+        }
+        r.setup_offered = true;
+        drop(r);
+        self.inline(
+            "我会自己走走、记事和提醒你。更多陪伴范围，也可以在这里设置。",
+            "setup",
+            Value::Null,
+            json!([{"id":"configure","label":"陪伴范围"}]),
+        );
+        true
     }
     pub fn activity_busy(&self) -> bool {
         self.activity_until.load(Ordering::Relaxed) > companion::now()
@@ -347,6 +484,8 @@ impl Service {
         !r.stopping
             && r.body_context.fresh(now)
             && r.body_context.unlocked
+            && d["settings"]["companionPausedUntil"].as_u64().unwrap_or(0) <= now
+            && r.body_context.ambient
             && clipboard_watch::enabled(d)
             && !busy
             && !self.activity_busy()
@@ -602,8 +741,9 @@ impl Service {
                     self.data.change(|d|{
                         file_watch::remove_ready(d,|v|moves.as_array().is_some_and(|a|a.iter().any(|m|m["from"]==v["full"])));
                         companion::log(d,"tidy",&format!("自动整理了 {} 个新文件，可撤销上次整理",moves.as_array().map_or(0,Vec::len)));
+                        let journal_id=d["tidyLog"]["id"].clone();
                         let items=d["inbox"].as_array_mut().ok_or("通知数据损坏")?;
-                        items.push(json!({"id":format!("native-tidy-{now}"),"kind":"tidy","text":"新文件整理好了，需要的话可以撤销。","tab":"files","createdAt":now}));
+                        items.push(json!({"id":format!("native-tidy-{now}"),"journalId":journal_id,"kind":"tidy","text":"新文件整理好了，需要的话可以撤销。","tab":"files","createdAt":now}));
                         if items.len()>12 {items.remove(0);}
                         Ok(())
                     })?;
@@ -624,6 +764,47 @@ impl Service {
         Ok(())
     }
     pub fn apply(&self, command: &str, args: Value) -> Result<Value, String> {
+        if command == "notice:respond" {
+            return self.respond_notice(&args);
+        }
+        if command == "notice:shown" {
+            let r = self.runtime.lock().unwrap();
+            let shown = r.inline.as_ref().is_some_and(|n| {
+                n.kind == "setup"
+                    && n.token == args["token"].as_u64().unwrap_or(0)
+                    && n.until > companion::now()
+            });
+            if shown {
+                self.data.change(|d| {
+                    d["settings"]["petSetupVersion"] = json!(1);
+                    Ok(())
+                })?;
+            }
+            return Ok(json!(shown));
+        }
+        if command == "companion:pause" {
+            let minutes = args["minutes"].as_u64().unwrap_or(60).min(1440);
+            self.data.change(|d| {
+                d["settings"]["companionPausedUntil"] = json!(if minutes == 0 {
+                    0
+                } else {
+                    companion::now() + minutes * 60_000
+                });
+                Ok(())
+            })?;
+            self.clipboard_reset();
+            self.reconcile_ambient(&self.data.snapshot());
+            self.say(
+                if minutes == 0 {
+                    "我回来啦。"
+                } else {
+                    "好，安静陪你一会儿。"
+                },
+                "wave",
+            );
+            self.changed();
+            return Ok(Value::Null);
+        }
         let _configuration_owner = if command == "settings:set"
             && (args.get("watchFolders").is_some() || args.get("rules").is_some())
         {
@@ -1406,11 +1587,27 @@ impl Service {
         ] {
             backend_settings[key] = s[key].clone();
         }
-        StartRequest{backend,backend_settings,reasoning_effort:s["codexEffort"].as_str().unwrap_or("").into(),prompt,workspace:s["cwd"].as_str().filter(|s|!s.is_empty()).map(String::from).unwrap_or_else(||self.work.to_string_lossy().into_owned()),permission:s["permission"].as_str().unwrap_or("read-only").into(),codex_path:s["codexExe"].as_str().unwrap_or("").into(),model:s["codexModel"].as_str().unwrap_or("").into(),session_id,instructions:"你是 Claude 大小姐，一位温暖、俏皮但不啰嗦的像素少女桌面伙伴。用简洁自然的中文回应，认真执行用户明确授权的任务。涉及外发、删除、花费和权限扩展时先问。需要桌宠动作时，在末尾附 ```pet 代码块，每行一个 JSON，例如 {\"action\":\"todo.add\",\"text\":\"写周报\"}、{\"action\":\"remind\",\"text\":\"休息\",\"in\":30}、{\"action\":\"emote\",\"anim\":\"happy\"}、{\"action\":\"pomodoro\",\"minutes\":25}、{\"action\":\"note.show\"}、{\"action\":\"memory.add\",\"text\":\"长期偏好\"}。文件移动用 {\"action\":\"file.move\",\"from\":\"绝对路径\",\"to\":\"目标绝对路径\"}，打开链接用 {\"action\":\"open\",\"target\":\"https://…\"}，需要确认的事用 {\"action\":\"ask\",\"question\":\"问题\",\"options\":[\"A\",\"B\"]}。只在用户要求的范围内提出动作，不得声称未执行的动作已经完成。".into(),..StartRequest::default()}
+        StartRequest{backend,backend_settings,reasoning_effort:s["codexEffort"].as_str().unwrap_or("").into(),prompt,workspace:s["cwd"].as_str().filter(|s|!s.is_empty()).map(String::from).unwrap_or_else(||self.work.to_string_lossy().into_owned()),permission:s["permission"].as_str().unwrap_or("read-only").into(),codex_path:s["codexExe"].as_str().unwrap_or("").into(),model:s["codexModel"].as_str().unwrap_or("").into(),session_id,instructions:"你是 Claude 大小姐，一位温暖、俏皮但不啰嗦的像素少女桌面伙伴。用简洁自然的中文回应，认真执行用户明确授权的任务。普通记事、提醒、专注和授权范围内的可逆工作直接做，不反复确认，也不要让用户打开面板。结果用一句话反馈。涉及外发、删除、花费和权限扩展时先问。需要桌宠动作时，在末尾附 ```pet 代码块，每行一个 JSON，例如 {\"action\":\"todo.add\",\"text\":\"写周报\"}、{\"action\":\"remind\",\"text\":\"休息\",\"in\":30}、{\"action\":\"emote\",\"anim\":\"happy\"}、{\"action\":\"pomodoro\",\"minutes\":25}、{\"action\":\"note.show\"}、{\"action\":\"memory.add\",\"text\":\"长期偏好\"}。文件移动用 {\"action\":\"file.move\",\"from\":\"绝对路径\",\"to\":\"目标绝对路径\"}，打开链接用 {\"action\":\"open\",\"target\":\"https://…\"}，需要确认的事用 {\"action\":\"ask\",\"question\":\"问题\",\"options\":[\"A\",\"B\"]}。只在用户要求的范围内提出动作，不得声称未执行的动作已经完成。".into(),..StartRequest::default()}
     }
     fn chat(&self, text: &str, typed: bool) -> Result<Value, String> {
         if self.runtime.lock().unwrap().stopping {
             return Err("应用正在退出".into());
+        }
+        if let Some(intent) = typed
+            .then(|| crate::intent::parse(text, companion::now()))
+            .flatten()
+        {
+            self.apply(intent.command, intent.args)?;
+            self.data.change(|d|{
+                let messages=d["chat"]["messages"].as_array_mut().ok_or("聊天记录损坏")?;
+                messages.push(json!({"role":"user","text":text,"typed":true,"ts":companion::now()}));
+                messages.push(json!({"role":"assistant","text":intent.reply,"ts":companion::now(),"local":true}));
+                if messages.len()>300{messages.drain(..messages.len()-300);}
+                companion::log(d,"local",&intent.reply);Ok(())
+            })?;
+            self.say(&intent.reply, "write");
+            self.changed();
+            return Ok(json!({"local":true,"text":intent.reply}));
         }
         if self.runtime.lock().unwrap().chat.is_some() {
             return Err("上一条回复仍在处理，请先等它完成或停止".into());
@@ -1480,6 +1677,13 @@ impl Service {
         self.reconcile_ambient(&self.data.snapshot());
         self.finish_jobs()?;
         self.refresh_alerts()?;
+        if self.data.snapshot()["settings"]["companionPausedUntil"]
+            .as_u64()
+            .unwrap_or(0)
+            > companion::now()
+        {
+            return Ok(());
+        }
         self.files_with(companion::now(), observer::unlocked, |roots| {
             roots
                 .iter()
@@ -1504,6 +1708,9 @@ impl Service {
             return Ok(());
         }
         if self.deliver_suggestions(present)? {
+            return Ok(());
+        }
+        if self.offer_setup(present) {
             return Ok(());
         }
         self.deliver_ambient(&d);
@@ -1648,6 +1855,33 @@ impl Service {
             .take(90)
             .collect::<String>();
         drop(r);
+        if notice["kind"] == "tidy" {
+            self.undo_notice(&line, notice["journalId"].clone());
+            self.changed();
+            return Ok(true);
+        }
+        if notice["kind"] == "files" {
+            if let Some(folder) = d["watch"]["ready"]
+                .as_array()
+                .and_then(|a| a.first())
+                .and_then(|f| f["folder"].as_str())
+            {
+                self.inline(&line,"files",json!({"folder":folder,"files":file_watch::selected(&self.data.snapshot(),folder)}),json!([{"id":"tidy","label":"整理"},{"id":"skip","label":"这批不用"}]));
+                self.changed();
+                return Ok(true);
+            }
+            return Ok(false);
+        }
+        if let Some(text) = notice["result"].as_str() {
+            self.inline(
+                &line,
+                "result",
+                json!({"text":text,"tab":notice["tab"]}),
+                json!([{"id":"read","label":"读给我看"}]),
+            );
+            self.changed();
+            return Ok(true);
+        }
         self.say_to(
             &line,
             if growth { "write" } else { "wave" },
@@ -1781,7 +2015,7 @@ impl Service {
                     Ok(())
                 })?;
                 if task.status == "completed" && !has_pose {
-                    self.say(&task.output.chars().take(90).collect::<String>(), "happy");
+                    self.say(&task.output, "happy");
                 }
                 self.changed();
                 return Ok(());
@@ -1980,15 +2214,33 @@ impl Service {
         } else {
             "activity"
         };
+        let readable = if kind == "reflect" {
+            self.data.snapshot()["growth"]["notes"]
+                .as_array()
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().or_else(|| v["text"].as_str()))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_default()
+        } else {
+            task.output.chars().take(20000).collect::<String>()
+        };
         if automatic {
             self.data.change(|d| {
                 let items = d["inbox"].as_array_mut().ok_or("通知数据损坏")?;
-                items.push(json!({"id":format!("native-{}-{}",kind,task.id),"kind":kind,"text":line,"tab":tab,"createdAt":companion::now()}));
+                items.push(json!({"id":format!("native-{}-{}",kind,task.id),"kind":kind,"text":line,"result":readable,"tab":tab,"createdAt":companion::now()}));
                 if items.len() > 12 { items.drain(..items.len()-12); }
                 Ok(())
             })?;
         } else {
-            self.say_to(&line, if kind == "reflect" { "write" } else { "wave" }, tab);
+            self.inline(
+                &line,
+                "result",
+                json!({"text":readable,"tab":tab}),
+                json!([{"id":"read","label":"展开"}]),
+            );
         }
         Ok(())
     }
@@ -2140,7 +2392,7 @@ mod file_tests {
             .collect();
         assert_eq!(bubbles.len(), 1);
         assert_eq!(bubbles[0].1["tab"], "files");
-        assert!(bubbles[0].1["until"].as_u64().unwrap() <= companion::now() + 12_000);
+        assert!(bubbles[0].1["until"].as_u64().unwrap() <= companion::now() + 20_000);
         s.apply("watch:preview", json!({"folder":folder})).unwrap();
         let plan = s.data.snapshot()["tidyPreview"].clone();
         assert_eq!(plan["moves"].as_array().unwrap().len(), 1);
@@ -2510,7 +2762,9 @@ fn ambient_reason(d: &Value, context: behavior::Context, now: u64) -> Option<&'s
     }
 }
 fn attention_reason(d: &Value, context: behavior::Context, now: u64) -> Option<&'static str> {
-    if !context.fresh(now) {
+    if d["settings"]["companionPausedUntil"].as_u64().unwrap_or(0) > now {
+        Some("companion-paused")
+    } else if !context.fresh(now) {
         Some("starting")
     } else if !context.unlocked {
         Some("locked")
@@ -2979,7 +3233,7 @@ mod agenda_tests {
             .collect();
         assert_eq!(notices.len(), 1);
         assert_eq!(notices[0]["tab"], "growth");
-        assert!(notices[0]["until"].as_u64().unwrap() <= companion::now() + 12_000);
+        assert!(notices[0]["until"].as_u64().unwrap() <= companion::now() + 20_000);
         assert!(service.data.snapshot()["inbox"]
             .as_array()
             .unwrap()
@@ -3704,6 +3958,142 @@ mod alert_tests {
         assert_eq!(d["todos"][0]["warned"], false);
         assert_eq!(d["todos"][0]["overdue"], false);
         service.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod pet_first_tests {
+    use super::*;
+    fn age(path: &std::path::Path) {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(300))
+            .unwrap();
+    }
+    fn fixture(name: &str) -> (Service, PathBuf) {
+        let root =
+            std::env::temp_dir().join(format!("ojousama-pet-first-{name}-{}", companion::now()));
+        std::fs::create_dir_all(&root).unwrap();
+        let data = Companion::open(root.join("data.json"), None).unwrap();
+        let s = Service::new(
+            data,
+            TaskManager::ephemeral(Arc::new(|_| {})),
+            root.join("work"),
+            root.join("documents"),
+            Arc::new(|_, _| {}),
+        )
+        .unwrap();
+        (s, root)
+    }
+    #[test]
+    fn typed_ordinary_requests_execute_locally_once_without_model_or_confirmation() {
+        let (s, root) = fixture("local");
+        for input in [
+            "待办：验证桌宠",
+            "提醒我10分钟后喝水",
+            "目标：学习日语",
+            "记住：喜欢安静",
+            "专注25分钟",
+        ] {
+            assert_eq!(
+                s.apply("chat:send", json!({"text":input})).unwrap()["local"],
+                true
+            );
+        }
+        let d = s.data.snapshot();
+        assert_eq!(d["todos"][0]["text"], "验证桌宠");
+        assert_eq!(d["goals"][0]["title"], "学习日语");
+        assert_eq!(d["memories"][0]["text"], "喜欢安静");
+        assert_eq!(d["reminders"][0]["text"], "喝水");
+        assert!(s.tasks.list().is_empty());
+        assert!(s.background.list().is_empty());
+        assert_eq!(d["chat"]["messages"].as_array().unwrap().len(), 10);
+        assert_eq!(d["settings"]["rules"]["tidy"], "auto");
+        assert!(!file_watch::enabled(&d));
+        s.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn inline_undo_is_single_use_expiring_and_bound_to_its_own_transaction() {
+        let (s, root) = fixture("undo");
+        let folder = root.join("downloads");
+        std::fs::create_dir(&folder).unwrap();
+        std::fs::write(folder.join("one.txt"), b"controlled").unwrap();
+        age(&folder.join("one.txt"));
+        utilities::tidy_apply_plan(&s.data, &utilities::tidy_plan(&folder).unwrap()).unwrap();
+        let first = s.data.snapshot()["tidyLog"]["id"].clone();
+        s.undo_notice("整理好了", first.clone());
+        let token = s.snapshot()["notice"]["token"].clone();
+        assert!(s
+            .apply("notice:respond", json!({"token":token,"choice":"delete"}))
+            .is_err());
+        assert!(s
+            .apply("notice:respond", json!({"token":0,"choice":"undo"}))
+            .is_err());
+        s.apply("notice:respond", json!({"token":token,"choice":"undo"}))
+            .unwrap();
+        assert!(folder.join("one.txt").is_file());
+        age(&folder.join("one.txt"));
+        assert!(s
+            .apply("notice:respond", json!({"token":token,"choice":"undo"}))
+            .is_err());
+        utilities::tidy_apply_plan(&s.data, &utilities::tidy_plan(&folder).unwrap()).unwrap();
+        let second = s.data.snapshot()["tidyLog"]["id"].clone();
+        assert_ne!(first, second);
+        s.undo_notice("整理好了", second);
+        let old = s.snapshot()["notice"]["token"].clone();
+        std::fs::write(folder.join("two.txt"), b"controlled next").unwrap();
+        age(&folder.join("two.txt"));
+        utilities::tidy_apply_plan(&s.data, &utilities::tidy_plan(&folder).unwrap()).unwrap();
+        let third = s.data.snapshot()["tidyLog"].clone();
+        assert!(s
+            .apply("notice:respond", json!({"token":old,"choice":"undo"}))
+            .unwrap_err()
+            .contains("其他批次"));
+        assert_eq!(s.data.snapshot()["tidyLog"], third);
+        s.undo_notice("整理好了", third["id"].clone());
+        let token = s.snapshot()["notice"]["token"].clone();
+        s.runtime.lock().unwrap().inline.as_mut().unwrap().until = 0;
+        assert!(s
+            .apply("notice:respond", json!({"token":token,"choice":"undo"}))
+            .is_err());
+        assert_eq!(s.data.snapshot()["tidyLog"], third);
+        s.shutdown();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn quiet_time_gates_autonomy_without_revoking_explicit_requests() {
+        let (s, root) = fixture("quiet");
+        s.apply("companion:pause", json!({"minutes":60})).unwrap();
+        assert_eq!(
+            attention_reason(
+                &s.data.snapshot(),
+                super::ambient_tests::context(),
+                companion::now()
+            ),
+            Some("companion-paused")
+        );
+        assert_eq!(
+            s.apply("chat:send", json!({"text":"待办：安静记事"}))
+                .unwrap()["local"],
+            true
+        );
+        s.apply("companion:pause", json!({"minutes":0})).unwrap();
+        assert_eq!(s.data.snapshot()["settings"]["companionPausedUntil"], 0);
+        let mut d = s.data.snapshot();
+        d["watch"]["native"] = json!({"enabled":true,"consentVersion":1,"autoRoots":["/approved"]});
+        assert!(!file_watch::auto_confirmation_required(
+            &d,
+            &["/approved".into()]
+        ));
+        assert!(file_watch::auto_confirmation_required(
+            &d,
+            &["/new-scope".into()]
+        ));
+        s.shutdown();
         std::fs::remove_dir_all(root).unwrap();
     }
 }

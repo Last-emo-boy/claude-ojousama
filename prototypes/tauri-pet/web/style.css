@@ -239,3 +239,45 @@ details.settings summary { cursor: pointer; width: fit-content; }
 #clipboard-text { width: 100%; min-height: 110px; max-height: 220px; margin-top: 12px; }
 .clipboard-quick .quick-actions { margin-bottom: 10px; }
 .clipboard-quick button, #clipboard-state { font-size: 12px; }
+
+/* Pet interaction stays inside the same physical stage; its feet never jump. */
+.pet-bubble.interactive { bottom: 112px; max-height: calc(100vh - 124px); overflow-y: auto; overscroll-behavior: contain; }
+.pet-message:empty { display: none; }
+.pet-message.expanded { display: block; max-height: 150px; overflow-y: auto; white-space: pre-wrap; }
+.pet-compose textarea { width: 100%; min-height: 48px; max-height: 100px; resize: vertical; padding: 7px 9px; font-size: 13px; }
+.pet-compose .compose-footer { margin: 5px 0 0; }
+.pet-compose button, .pet-tools button, #pet-clipboard-preview button, .pet-bubble .pending-card button { font-size: 12px; padding: 5px 9px; }
+.pet-tools { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.pet-tools label { font-size: 12px; margin-bottom: 7px; }
+.pet-tools select { padding: 4px 8px; margin-left: 8px; }
+.pet-bubble .quick-actions { gap: 5px; margin: 7px 0; }
+.pet-actions, .pet-alert-actions { flex-wrap: wrap; }
+.pet-bubble .pending-card { border: 0; padding: 0; margin: 8px 0; }
+.pet-bubble .pending-card h3 { font-size: 13px; margin: 5px 0; }
+.pet-bubble .pending-card p, .pet-bubble .pending-card pre, .pet-bubble .pending-card legend { font-size: 12px; }
+.pet-bubble .pending-card pre { max-height: 80px; overflow: auto; }
+.pet-bubble .pending-card textarea { min-height: 45px; width: 100%; }
+.pet-bubble .pending-card fieldset { padding: 5px; margin: 5px 0; min-width: 0; }
+#pet-clipboard-text { width: 100%; min-height: 60px; max-height: 100px; }
+.pet-menu { max-height: calc(100vh - 12px); overflow-y: auto; }
+.record-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 22px; }
+.record-filters button { padding: 6px 11px; background: transparent; border-color: transparent; color: var(--muted); }
+.record-filters button[aria-current="true"] { background: #f4e7d5; color: var(--ink); }
+.record-row { border-bottom: 1px solid var(--line); padding: 16px 0; overflow-wrap: anywhere; }
+.record-row:first-child { padding-top: 0; }
+.record-title { margin: 0 0 5px; line-height: 1.65; white-space: pre-wrap; }
+.record-row small { color: var(--muted); }
+.record-body { white-space: pre-wrap; line-height: 1.65; }
+.record-row button { margin: 10px 7px 0 0; padding: 5px 10px; font-size: 12px; }
+
+.pet-bubble.interactive::after { display: none; }
+.pet-menu { bottom: 112px; max-height: calc(100vh - 124px); }
+.pet-menu { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); width: 252px; gap: 2px; }
+.pet-menu[hidden] { display: none; }
+.pet-menu button { padding: 8px; }
+.pet-bubble.interactive { bottom: 154px; max-height: calc(100vh - 166px); z-index: 2; }
+.pet-message[hidden], .pet-bubble .pending-card h3 { display: none; }
+.pet-bubble .pending-explanation { max-height: 72px; overflow-y: auto; }
+.pet-bubble .pending-explanation p { margin: 4px 0; }
+.pet-bubble .pending-explanation pre { margin: 6px 0 0; padding: 6px; }
+.pet-bubble .pending-actions { margin-top: 7px; position: sticky; bottom: 0; padding-top: 3px; background: #fffcf6; }

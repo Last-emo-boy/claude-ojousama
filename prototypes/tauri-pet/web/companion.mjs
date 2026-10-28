@@ -1,67 +1,32 @@
-import { clipboardPrompt, appendDraft, clipboardTodo, desktopPayload, desktopStatus, clipboardWatchPayload, clipboardWatchStatus } from './desktop-entry.mjs'
+import { desktopPayload, desktopStatus, clipboardWatchPayload, clipboardWatchStatus } from './desktop-entry.mjs'
 import { observationPayload, observationStatus, observationPermissions } from './observation.mjs'
 import { habitPayload, moodLabel } from './behavior.mjs'
 import { agendaPayload, agendaStatus, backgroundLabel, backgroundText } from './agenda.mjs'
 import { watchPayload, fileGroups, watchStatus } from './files.mjs'
-const $ = id => document.getElementById(id)
-const text = (tag, value, className = '') => { const node = document.createElement(tag); node.textContent = value; node.className = className; return node }
-const date = ts => ts ? new Date(ts).toLocaleString('zh-CN', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''
-const icons = {
-  chat: '<path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z"/>',
-  todos: '<path d="m4 12 4 4 8-8m-1 8 5-5M4 4h10"/>',
-  goals: '<path d="M4 22V3m0 1c5-5 11 5 16 0v12c-5 5-11-5-16 0"/>',
-  tasks: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="m7 8 4 4-4 4m6 0h4"/>',
-  actions: '<path d="M7 3c-4 0-4 7-2 9 1 1 4 1 4-1V7c0-2 0-4-2-4Zm10 6c4 0 4 7 2 9-1 1-4 1-4-1v-4c0-2 0-4 2-4Z"/>',
-  growth: '<path d="M12 22v-9m0 3C3 16 2 10 3 4c6 0 10 4 9 12Zm0-3C12 6 18 3 22 3c0 5-4 10-10 10Z"/>',
-  activity: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-  settings: '<path d="M4 5h16M4 12h16M4 19h16"/><circle cx="9" cy="5" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="8" cy="19" r="2"/>',
-}
-const navIcon = name => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${icons[name]}</svg>`
-const ACTIONS = [['climb','爬窗','攀爬预览'],['ledge','翻上窗沿','收尾预览'],['wave','挥挥手'],['stretch','伸个懒腰'],['magnify','看看内容'],['read','读一会儿'],['dance','跳支舞'],['walk','走两步'],['water','喝点水'],['nap','打个盹'],['happy','开心一下'],['magic','变个魔术']]
-export const dateValue = value => value ? new Date(value).getTime() : null
-export function mountCompanion({invoke, initial, showError, onTasks, platform}) {
-  let current = initial
-  let tab = 'chat'
-  let motionValue = null
-  let desktopValue = null
-  let clipboardGeneration = 0
-  const header = document.querySelector('.panel-header')
-  const tasks = document.createElement('div'); tasks.id = 'view-tasks'
-  const form = $('task-form'), result = document.querySelector('.tasks-section') || $('task-history').closest('section')
-  form.before(tasks); tasks.append(form, result); tasks.hidden = true
-  const legacy=document.createElement('section');legacy.innerHTML='<h2>原有任务记录</h2><div id="legacy-tasks" class="item-list"></div>';tasks.append(legacy)
-  const nav = document.createElement('nav'); nav.className = 'companion-nav'; nav.setAttribute('aria-label','控制面板')
-  header.after(nav)
-  const host = document.createElement('div'); nav.after($('panel-error')); $('panel-error').after(host)
-  const tabs = [['chat','聊天'],['todos','待办'],['goals','目标'],['tasks','任务'],['actions','动作'],['growth','成长'],['activity','动态'],['settings','设置']]
-  for (const [name, label] of tabs) {
-    const button = text('button',''); button.type='button'; button.dataset.tab=name;button.setAttribute('aria-label',label)
-    button.innerHTML=navIcon(name);button.append(text('span',label))
-    button.addEventListener('click',()=>select(name)); nav.append(button)
+const $=id=>document.getElementById(id)
+const text=(tag,value,className='')=>{const n=document.createElement(tag);n.textContent=value;n.className=className;return n}
+const date=ts=>ts?new Date(ts).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):''
+export const dateValue=value=>value?new Date(value).getTime():null
+const filters=[['activity','动态'],['chat','对话'],['tasks','任务'],['todos','提醒'],['goals','目标'],['files','文件'],['growth','成长']]
+export function mountCompanion({invoke,initial,showError,platform}){
+  let current=initial, tab='records', filter='activity', desktopValue=null
+  const header=document.querySelector('.panel-header'), tasks=$('task-history').closest('section')
+  tasks.id='view-tasks'
+  const sidebar=document.createElement('aside');sidebar.className='companion-sidebar'
+  const brand=header.querySelector('.brand');brand.querySelector('h1').textContent='大小姐';brand.querySelector('.brand-mark').textContent='✿'
+  const nav=document.createElement('nav');nav.className='companion-nav';nav.setAttribute('aria-label','控制面板')
+  sidebar.append(brand,nav)
+  for(const [name,label]of [['records','记录'],['settings','设置']]){
+    const b=text('button',label);b.type='button';b.dataset.tab=name;b.addEventListener('click',()=>select(name));nav.append(b)
   }
-  host.innerHTML = `
-    <section id="view-chat" class="companion-view">
-      <div id="chat-welcome" class="chat-welcome"><div class="welcome-sprite" aria-hidden="true"></div><h2>今天，也一起。</h2><p>聊聊今天，或者从一件小事开始。</p></div>
-      <div id="chat-messages" class="chat-messages" aria-live="polite"></div><p id="chat-live" role="status"></p><button id="chat-pending" type="button" hidden>查看需要确认的操作</button><div id="chat-question" class="pending-card" hidden></div><div id="pending-actions" class="item-list"></div>
-      <form id="chat-form" class="chat-compose"><label for="chat-text" class="visually-hidden">和大小姐说点什么</label><textarea id="chat-text" required maxlength="20000" placeholder="说点什么，或者交给我一件事…"></textarea><div class="compose-footer"><button id="chat-new" type="button" class="subtle">＋ 新对话</button><button id="chat-stop" type="button" hidden>停止</button><button id="chat-send" class="primary">发送 ↗</button></div></form>
-      <div class="quick-actions"><button id="look-open" type="button">看看我在做什么</button><button id="clipboard-open" type="button">剪贴板操作</button><button id="note-open" type="button">贴便签</button><button id="prank-dance" type="button">跳支舞</button></div>
-      <section id="clipboard-quick" class="clipboard-quick" hidden><div class="section-heading"><h3>剪贴板文字</h3><button id="clipboard-close" type="button" aria-label="关闭并清除剪贴板预览">×</button></div><textarea id="clipboard-text" aria-label="剪贴板预览" maxlength="24000"></textarea><div class="quick-actions"><button type="button" data-clipboard="explain">解释</button><button type="button" data-clipboard="translate">翻译</button><button type="button" data-clipboard="fix">修 Bug</button><button type="button" data-clipboard="summary">总结</button><button type="button" data-clipboard="todo">记成待办</button></div><p id="clipboard-state" class="muted" role="status">只在本机预览；选择后带入输入框，发送前可修改。</p></section>
-      <details id="look-controls"><summary>选择观察窗口</summary><p class="muted">选中窗口的画面或已启用的可见文字会交给 Codex 理解，不读取其他窗口。</p><div class="workspace-row"><select id="look-window" aria-label="观察窗口"></select><button id="look-refresh" type="button">刷新窗口</button><button id="look-now" type="button">看一下</button></div><p id="look-state" role="status"></p></details>
-    </section>
-    <section id="view-todos" class="companion-view" hidden>
-      <section id="file-discovery" tabindex="-1"><h2>新文件</h2><p id="watch-state" class="setting-help" role="status"></p><div id="watch-ready" class="item-list"></div><details class="agenda-preferences"><summary>文件夹设置</summary><form id="watch-form" class="stack-form"><label class="check-row"><input id="watch-enabled" type="checkbox">发现文件夹里的新文件</label><label>关注目录<textarea id="watch-folders" placeholder="留空使用系统下载目录；多个目录一行一个"></textarea></label><button id="watch-choose" type="button">添加文件夹</button><label>发现之后<select id="watch-mode"><option value="ask">先预览，确认后整理</option><option value="auto">自动按类型整理</option><option value="off">不再提议整理</option></select></label><p class="setting-help">首次只记住现有文件；新文件稳定 45 秒后才处理。不读取文件内容，不调用 AI。</p><p class="setting-help">自动整理需单独确认，仅移动新文件到同目录的分类文件夹，不覆盖已有文件。</p><button class="primary">保存文件夹设置</button><p id="watch-saved" role="status"></p></form></details></section>
-      <section id="alert-inbox" hidden><h2 id="alert-inbox-title">待处理提醒</h2><div id="alert-list" class="item-list"></div></section>
-      <h2>待办</h2><form id="todo-form" class="inline-compose"><input id="todo-text" aria-label="待办内容" required maxlength="2000" placeholder="记下一件事"><input id="todo-due" type="datetime-local" aria-label="截止时间"><button class="primary">添加</button></form><div id="todo-list" class="item-list"></div>
-      <h2>提醒</h2><form id="reminder-form" class="inline-compose"><input id="reminder-text" aria-label="提醒内容" required placeholder="提醒我…"><input id="reminder-at" type="datetime-local" aria-label="提醒时间" required><select id="reminder-repeat" aria-label="重复"><option value="">仅一次</option><option value="daily">每天</option></select><button>设提醒</button></form><div id="reminder-list" class="item-list"></div>
-      <h2>整理文件</h2><div class="workspace-row"><input id="tidy-folder" aria-label="整理目录" placeholder="选择要整理的目录"><button id="tidy-choose" type="button">选择</button><button id="tidy-preview" type="button">先看怎么整理</button></div><div id="tidy-plan" class="item-list"></div><div class="quick-actions"><button id="tidy-apply" type="button" hidden>按列表整理</button><button id="tidy-cancel" type="button" hidden>取消预览</button><button id="tidy-undo" type="button">撤销上次整理</button></div><h2>专注一会儿</h2><div class="quick-actions"><input id="pomo-minutes" type="number" min="1" max="180" value="25" aria-label="专注分钟"><button id="pomo-start">开始专注</button><button id="pomo-stop">结束</button><span id="pomo-state" role="status"></span></div>
-    </section>
-    <section id="view-goals" class="companion-view" hidden>
-      <h2>持续推进的目标</h2><form id="goal-form" class="stack-form"><input id="goal-title" aria-label="目标" required placeholder="想持续推进什么？"><textarea id="goal-detail" aria-label="目标标准" placeholder="做到什么程度，哪些事情需要先问你？"></textarea><div class="workspace-row"><select id="goal-every" aria-label="跟进频率"><option value="daily">每天</option><option value="3h">每 3 小时</option><option value="hourly">每小时</option></select><input id="goal-at" type="time" value="09:00" aria-label="每日跟进时间"><button class="primary">添加目标</button></div></form><div id="goal-list" class="item-list"></div>
-    </section>
-    <section id="view-growth" class="companion-view" hidden><h2 id="growth-level"></h2><div class="quick-actions"><span id="growth-affection"></span><button id="growth-touch" type="button">摸摸头</button></div><p id="growth-touch-state" class="muted" role="status"></p><h3>记住的事</h3><form id="memory-form" class="workspace-row"><input id="memory-text" aria-label="长期记忆" required placeholder="希望大小姐记住的偏好"><button>记住</button></form><div id="memory-list" class="item-list"></div><div class="quick-actions"><button id="growth-reflect">整理记忆与日记</button></div><h3>成长笔记</h3><div id="growth-notes"></div><h3>日记</h3><div id="growth-diary"></div></section>
-    <section id="view-actions" class="companion-view" hidden><div class="actions-intro"><h2>让她去转转。</h2><p>一个小动作，也是一点陪伴。</p></div><div class="new-actions"><div class="action-art" id="climb-preview" aria-hidden="true"></div><div class="action-art" id="ledge-preview" aria-hidden="true"></div><div><span class="eyebrow">新动作</span><h3>从窗口边上，爬到你身边。</h3><p>沿着真实窗口的边缘走过去，再爬到窗沿坐下。</p></div></div><div class="desktop-activity"><h3>桌面活动</h3><div class="quick-actions"><button id="motion-walk" type="button">去走走</button><button id="motion-climb" type="button" class="primary">爬上窗口</button><button id="motion-stop" type="button">停步／下来</button><button id="motion-pause" type="button">暂停活动</button><button id="motion-resume" type="button">继续活动</button></div><div class="workspace-row"><select id="motion-screen" aria-label="目标显示器"></select><button id="motion-go" type="button">到这块屏幕</button><button id="motion-refresh" type="button">刷新</button></div><p id="motion-state" class="setting-help" role="status"></p><form id="motion-preferences" class="motion-preferences"><label class="check-row"><input id="motion-wander" type="checkbox">自主走动</label><label class="check-row"><input id="motion-windows" type="checkbox">自动爬窗</label><label class="check-row"><input id="motion-cross" type="checkbox">允许跨屏</label><label class="check-row"><input id="motion-fullscreen" type="checkbox">全屏时隐藏</label><button type="submit">保存偏好</button></form></div><h3>动作预览</h3><div id="action-gallery" class="action-gallery" aria-label="动作选择器"></div><p id="action-state" class="muted" role="status">选择一个动作，在桌宠上播放。不会弹出说话气泡。</p></section>
-    <section id="view-activity" class="companion-view" hidden><h2>她自己做的事</h2><p id="agenda-state" class="muted" role="status"></p><div class="quick-actions"><button id="agenda-brief">今日简报</button><button id="agenda-pulse">只读巡检</button><button id="agenda-tip">小技巧</button><button id="summary-now">今日小结</button></div><details class="agenda-preferences"><summary>自动安排</summary><form id="agenda-form" class="stack-form"><label class="check-row"><input id="agenda-enabled" type="checkbox">自动准备简报、整理记忆和小技巧</label><label class="check-row"><input id="agenda-morning" type="checkbox">早上准备今日简报</label><label class="check-row"><input id="agenda-workspace" type="checkbox">离开时整理工作区状态</label><div class="settings-grid"><label>每天最多尝试<input id="agenda-limit" type="number" min="0" max="30" step="1" required></label><label>定时小结<input id="agenda-summary-time" type="time"></label></div><p class="setting-help">次数包含手动任务和小结，0 为关闭；小结时间留空即关闭。</p><p class="setting-help">使用已配置的 AI 后端和账户额度；不读取屏幕或剪贴板。巡检只查看已配置工作目录的 Git 状态。</p><button class="primary">保存日程设置</button><p id="agenda-saved" role="status"></p></form></details><h3>已经准备好了</h3><div id="background-tasks" class="item-list"></div><h2>最近的动态</h2><div id="activity-list" class="item-list"></div></section>
-    <section id="view-settings" class="companion-view" hidden>
+  const main=document.createElement('main');main.className='companion-main'
+  const title=document.createElement('div');title.className='panel-title';title.innerHTML='<h2 id="companion-title">一起做过的事</h2>'
+  header.prepend(title)
+  const records=document.createElement('section');records.id='view-records';records.className='companion-view'
+  records.innerHTML='<nav id="record-filters" class="record-filters" aria-label="记录类型"></nav><div id="record-items" class="record-items"></div>'
+  for(const [name,label]of filters){const b=text('button',label);b.type='button';b.dataset.filter=name;b.addEventListener('click',()=>{filter=name;render()});records.querySelector('nav').append(b)}
+  const preferences=document.createElement('section');preferences.id='view-settings';preferences.className='companion-view';preferences.hidden=true
+  preferences.innerHTML=`<details class="agenda-preferences"><summary>桌面活动</summary><form id="motion-preferences" class="motion-preferences"><label class="check-row"><input id="motion-wander" type="checkbox">自主走动</label><label class="check-row"><input id="motion-windows" type="checkbox">自动爬窗</label><label class="check-row"><input id="motion-cross" type="checkbox">允许跨屏</label><label class="check-row"><input id="motion-fullscreen" type="checkbox">全屏时隐藏</label><button type="submit">保存偏好</button><p id="motion-preferences-state" role="status"></p></form></details><details class="agenda-preferences"><summary>自动安排</summary><form id="agenda-form" class="stack-form"><label class="check-row"><input id="agenda-enabled" type="checkbox">自动准备简报、整理记忆和小技巧</label><label class="check-row"><input id="agenda-morning" type="checkbox">早上准备今日简报</label><label class="check-row"><input id="agenda-workspace" type="checkbox">离开时整理工作区状态</label><div class="settings-grid"><label>每天最多尝试<input id="agenda-limit" type="number" min="0" max="30" step="1" required></label><label>定时小结<input id="agenda-summary-time" type="time"></label></div><p class="setting-help">次数包含手动任务和小结，0 为关闭；小结时间留空即关闭。</p><p class="setting-help">使用已配置的 AI 后端和账户额度；不读取屏幕或剪贴板。巡检只查看已配置工作目录的 Git 状态。</p><button class="primary">保存日程设置</button><p id="agenda-saved" role="status"></p></form></details><details class="agenda-preferences"><summary>照顾新文件</summary><form id="watch-form" class="stack-form"><label class="check-row"><input id="watch-enabled" type="checkbox">发现文件夹里的新文件</label><label>关注目录<textarea id="watch-folders" placeholder="留空使用系统下载目录；多个目录一行一个"></textarea></label><button id="watch-choose" type="button">添加文件夹</button><label>发现之后<select id="watch-mode"><option value="ask">在气泡里问我</option><option value="auto">自动按类型整理</option><option value="off">不再提议整理</option></select></label><p class="setting-help">首次只记住现有文件；新文件稳定 45 秒后才处理。不读取文件内容，不调用 AI。</p><p class="setting-help">首次开启或扩大范围时确认，仅移动新文件到同目录的分类文件夹，不覆盖已有文件。</p><button class="primary">保存文件夹设置</button><p id="watch-saved" role="status"></p></form></details>
       <h2>日常陪伴</h2><form id="habits-form" class="stack-form"><label class="check-row"><input id="habit-idle" type="checkbox">闲时做点小动作，离开时打个盹</label><label class="check-row"><input id="habit-proactive" type="checkbox">喝水提醒和偶尔的小惊喜</label><label class="check-row"><input id="habit-focus" type="checkbox">专注计时中不打扰</label><div class="settings-grid"><label>活跃程度<select id="habit-autonomy"><option value="quiet">安静</option><option value="normal">适中</option><option value="active">活泼</option></select></label><label>小惊喜<select id="habit-mischief"><option value="0">关闭</option><option value="1">偶尔</option><option value="2">适中</option><option value="3">经常</option></select></label></div><label>喝水提醒间隔（分钟）<input id="habit-water" type="number" min="0" max="600" step="1" required></label><p class="setting-help">0 为关闭；只累计你使用电脑的时间。日常动作在本机运行，不调用 AI。</p><button class="primary">保存陪伴设置</button><p id="habits-state" role="status"></p></form>
       <h2>桌面入口</h2><form id="desktop-entry-form" class="stack-form"><label class="check-row"><input id="desktop-autostart" type="checkbox" disabled>登录后启动</label><p class="setting-help">安装到固定位置后再开启。</p><label>剪贴板快捷键<input id="desktop-hotkey" placeholder="CommandOrControl+Alt+Q" spellcheck="false"></label><p class="setting-help">留空关闭。快捷键只打开文字预览，不会自动发送给 AI。</p><div class="quick-actions"><button class="primary">保存桌面设置</button><button id="desktop-refresh" type="button">刷新状态</button></div><p id="desktop-state" role="status"></p></form>
       <form id="clipboard-watch-form" class="stack-form"><label class="check-row"><input id="clipboard-watch-enabled" type="checkbox">复制报错、代码或英文时，问问是否需要帮忙</label><p class="setting-help">后台读取剪贴板文字，仅在本机识别，不保存历史。选择操作后先带入草稿，不会自动发送给 AI。</p><button id="clipboard-watch-save" type="submit">保存剪贴板设置</button><p id="clipboard-watch-state" role="status"></p></form>
@@ -77,48 +42,13 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
         <p class="setting-help">默认跳过密码、支付、私密浏览、聊天和会议窗口。开启后不逐次提示，可随时暂停。</p>
         <div class="quick-actions"><button class="primary">保存观察设置</button><button id="observe-pause" type="button">暂停 1 小时</button><button id="observe-permission" type="button">授权屏幕访问</button><button id="observe-accessibility" type="button">授权辅助功能</button><button id="observe-check" type="button">检查权限</button></div><p id="observer-permissions" class="muted"></p><p id="observer-state" role="status"></p>
       </form>
-      <h2>AI 与工作目录</h2><form id="companion-settings" class="stack-form"><label>聊天与任务后端<select id="companion-backend"><option value="codex">Codex</option><option value="dsh">DeepSeek Harness（Windows 兼容）</option></select></label><details><summary>DSH 兼容设置</summary><label>DSH 可执行文件<input id="companion-dsh" placeholder="自动查找"></label><label>Profile<input id="companion-profile" placeholder="desktop"></label><label>Provider<input id="companion-provider" placeholder="继承原配置"></label><label>DSH 模型<input id="companion-dsh-model" placeholder="继承原配置"></label></details><label>Codex 可执行文件<input id="companion-codex" placeholder="自动查找"></label><label>模型<input id="companion-model" placeholder="使用 Codex 默认模型"></label><label>观察模型<input id="companion-glance-model" placeholder="与聊天相同"></label><label>工作目录<input id="companion-cwd" placeholder="未设置时只在独立工作目录中运行"></label><label>任务权限<select id="companion-permission"><option value="read-only">只读</option><option value="workspace-write">工作区可写</option><option value="danger-full-access">完全访问（谨慎）</option></select></label><label>再次提醒间隔（分钟）<input id="nag-minutes" type="number" min="0" max="1440" required value="5"></label><p class="setting-help">0 为不重复；最多弹出 3 次，未处理内容留在待办。</p><div class="settings-grid"><label>安静开始<input id="quiet-start" type="time"></label><label>安静结束<input id="quiet-end" type="time"></label></div><button class="primary">保存</button><span id="companion-saved" role="status"></span></form><h2>天气与更新</h2><form id="weather-form" class="workspace-row"><input id="weather-city" aria-label="所在城市" placeholder="城市留空时不查询天气"><button>查天气</button></form><p id="weather-state" role="status"></p><button id="update-check" type="button">检查更新</button><p id="update-state" role="status"></p>
-    </section>`
-  const sidebar=document.createElement('aside');sidebar.className='companion-sidebar'
-  const brand=header.querySelector('.brand');brand.querySelector('h1').textContent='大小姐';brand.querySelector('.brand-mark').textContent='✿'
-  sidebar.append(brand,nav)
-  const main=document.createElement('main');main.className='companion-main'
-  const title=document.createElement('div');title.className='panel-title';title.innerHTML='<h2 id="companion-title">今天也一起。</h2><p id="companion-subtitle">Codex · 随时聊聊</p>'
-  header.prepend(title)
+      <h2>AI 与工作目录</h2><form id="companion-settings" class="stack-form"><label>聊天与任务后端<select id="companion-backend"><option value="codex">Codex</option><option value="dsh">DeepSeek Harness（Windows 兼容）</option></select></label><details><summary>DSH 兼容设置</summary><label>DSH 可执行文件<input id="companion-dsh" placeholder="自动查找"></label><label>Profile<input id="companion-profile" placeholder="desktop"></label><label>Provider<input id="companion-provider" placeholder="继承原配置"></label><label>DSH 模型<input id="companion-dsh-model" placeholder="继承原配置"></label></details><label>Codex 可执行文件<input id="companion-codex" placeholder="自动查找"></label><label>模型<input id="companion-model" placeholder="使用 Codex 默认模型"></label><label>观察模型<input id="companion-glance-model" placeholder="与聊天相同"></label><label>工作目录<input id="companion-cwd" placeholder="未设置时只在独立工作目录中运行"></label><button id="companion-cwd-choose" type="button">选择工作目录</button><label>任务权限<select id="companion-permission"><option value="read-only">只读</option><option value="workspace-write">工作区可写</option><option value="danger-full-access">完全访问（谨慎）</option></select></label><label>再次提醒间隔（分钟）<input id="nag-minutes" type="number" min="0" max="1440" required value="5"></label><p class="setting-help">0 为不重复；最多弹出 3 次，未处理内容留在待办。</p><div class="settings-grid"><label>安静开始<input id="quiet-start" type="time"></label><label>安静结束<input id="quiet-end" type="time"></label></div><button class="primary">保存</button><span id="companion-saved" role="status"></span></form><h2>天气与更新</h2><form id="weather-form" class="workspace-row"><input id="weather-city" aria-label="所在城市" placeholder="城市留空时不查询天气"><button>查天气</button></form><p id="weather-state" role="status"></p><button id="update-check" type="button">检查更新</button><p id="update-state" role="status"></p>`
+  main.append(header,$('panel-error'),records,preferences,document.querySelector('.panel-footnote'))
   document.querySelector('#app').prepend(sidebar,main)
-  main.append(header,$('panel-error'),host,tasks,document.querySelector('.panel-footnote'))
-  const call = async (command,args={}) => {const result=await invoke('companion_command',{command,args});showError('');return result}
-  const bind = (id,work) => $(id).addEventListener('click',async event=>{const button=event.currentTarget;button.disabled=true;try{await work()}catch(e){showError(e)}finally{button.disabled=false;if(button.id.startsWith('motion-'))renderMotion()}})
-  const submit=(id,work)=>$(id).addEventListener('submit',async e=>{e.preventDefault();const button=e.target.querySelector('button.primary,button:not([type="button"])');if(button)button.disabled=true;try{await work()}catch(error){showError(error)}finally{if(button)button.disabled=false}})
-  submit('chat-form', async()=>{await call('chat:send',{text:$('chat-text').value.trim()});$('chat-text').value=''})
-  bind('chat-stop',async()=>{if(current.chatTask)await invoke('task_cancel',{id:current.chatTask})})
-  bind('chat-pending',()=>select('tasks'))
-  bind('chat-new',()=>call('chat:new'))
-  const refresh = async()=>{const values=await invoke('observer_windows');$('look-window').replaceChildren(...values.map(w=>{const n=text('option',`${w.name} · ${w.title}`);n.value=w.id;return n}));$('look-controls').open=true}
-  bind('look-open',refresh);bind('look-refresh',refresh)
-  bind('look-now',async()=>{const id=Number($('look-window').value);if(!id)throw new Error('请先选择一个窗口');await invoke('look_now',{chosen:id});$('look-state').textContent='这次观察已开始，合适的内容会显示在桌宠气泡里。'})
-  async function previewClipboard(offer=false) {
-    const generation=++clipboardGeneration
-    const value=await invoke(offer?'clipboard_offer_preview':'clipboard_preview')
-    if(generation!==clipboardGeneration)return
-    $('clipboard-text').value=value.text;$('clipboard-quick').hidden=false
-    $('clipboard-state').textContent=value.truncated?`已带入前 ${Array.from(value.text).length} 字；过长部分未带入，可编辑后再发送。`:'只在本机预览；选择后带入输入框，发送前可修改。'
-    select('chat');$('clipboard-text').focus()
-    if(offer && value.action && value.action!=='preview') {
-      const draft=appendDraft($('chat-text').value,clipboardPrompt(value.action,value.text))
-      $('chat-text').value=draft;clearClipboard();$('chat-text').focus()
-    }
-  }
-  function clearClipboard() {clipboardGeneration++;$('clipboard-text').value='';$('clipboard-quick').hidden=true}
-  bind('clipboard-open',previewClipboard);bind('clipboard-close',clearClipboard)
-  for(const button of document.querySelectorAll('[data-clipboard]'))button.addEventListener('click',async()=>{
-    button.disabled=true
-    try {
-      const value=$('clipboard-text').value.trim();if(!value)throw new Error('请先复制或粘贴文字')
-      if(button.dataset.clipboard==='todo') {await call('todo:add',{text:clipboardTodo(value)});clearClipboard();select('todos')}
-      else {$('chat-text').value=appendDraft($('chat-text').value,clipboardPrompt(button.dataset.clipboard,value));clearClipboard();$('chat-text').focus()}
-    } catch(error){showError(error)} finally {button.disabled=false}
-  })
+  records.append(tasks)
+  const call=async(command,args={})=>{const v=await invoke('companion_command',{command,args});showError('');return v}
+  const bind=(id,work)=>$(id).addEventListener('click',async event=>{const b=event.currentTarget;b.disabled=true;try{await work()}catch(e){showError(e)}finally{b.disabled=false}})
+  const submit=(id,work)=>$(id).addEventListener('submit',async event=>{event.preventDefault();const b=event.target.querySelector('button.primary,button:not([type="button"])');if(b)b.disabled=true;try{await work()}catch(e){showError(e)}finally{if(b)b.disabled=false}})
   const refreshDesktop=async()=>{
     desktopValue=await invoke('desktop_status')
     $('desktop-autostart').disabled=typeof desktopValue.autoStart!=='boolean'
@@ -133,33 +63,8 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
     try {await call('settings:set',desktopPayload({hotkey:$('desktop-hotkey').value,autoStart:$('desktop-autostart').disabled?null:$('desktop-autostart').checked,shortcutSupported:desktopValue.shortcutSupported}))}
     finally {await refreshDesktop()}
   })
-  bind('note-open',()=>invoke('note_toggle'))
-  bind('prank-dance',()=>call('prank',{name:'dance'}))
-  bind('growth-touch',async()=>{const value=await call('pet:touch');$('growth-touch-state').textContent=value.gift?'收到一份小惊喜。':value.rewarded?'好感度 +1 · 经验 +1':'嗯，还想再摸摸。'})
   submit('habits-form',async()=>{await call('settings:set',habitPayload({idleActions:$('habit-idle').checked,proactive:$('habit-proactive').checked,focusGuard:$('habit-focus').checked,autonomy:$('habit-autonomy').value,mischief:$('habit-mischief').value,waterMinutes:$('habit-water').value}));$('habits-state').textContent='已保存'})
-  const motion = async(command,screen) => {await invoke('motion_command',{command,screen});if(['walk','climb','screen'].includes(command))await invoke('hide_panel');await refreshMotion()}
-  const refreshMotion = async() => {
-    motionValue=await invoke('motion_status')
-    $('motion-screen').replaceChildren(...motionValue.screens.map((s,i)=>{const option=text('option',`${i+1} · ${s.name}`);option.value=s.id;return option}))
-    if(motionValue.current)$('motion-screen').value=motionValue.current
-    for(const id of ['motion-walk','motion-climb','motion-stop','motion-go'])$(id).disabled=!motionValue.positionable
-    if(motionValue.screens.length<2)$('motion-go').disabled=true
-    renderMotion()
-  }
-  for(const [id,command]of [['motion-walk','walk'],['motion-climb','climb'],['motion-stop','stop'],['motion-pause','pause'],['motion-resume','resume']])bind(id,()=>motion(command))
-  bind('motion-refresh',refreshMotion);bind('motion-go',()=>motion('screen',$('motion-screen').value))
-  submit('motion-preferences',async()=>{await call('settings:set',{wander:$('motion-wander').checked,climbWindows:$('motion-windows').checked,crossScreens:$('motion-cross').checked,hideOnFullscreen:$('motion-fullscreen').checked});$('motion-state').textContent='桌面活动偏好已保存'})
-  function renderMotion(){if(!motionValue)return;const paused=current.data.settings.motionPausedUntil>Date.now();const m=motionValue.motion;for(const id of ['motion-walk','motion-climb','motion-go'])$(id).disabled=!motionValue.positionable||paused; $('motion-stop').disabled=!motionValue.positionable;if(motionValue.screens.length<2)$('motion-go').disabled=true;const labels={walking:'走路中',climbing:'攀爬中',hoisting:'正在翻上窗沿',descending:'正在下来',perched:'坐在窗口上',dragging:'跟着你走',flying:'落地中',settled:'安静陪着你'};$('motion-state').textContent=!motionValue.positionable?'当前 Wayland 桌面由系统管理位置；X11 或 XWayland 可使用自主移动。':paused?'桌面活动已暂停 1 小时，可随时继续。':m.paused?({starting:'正在恢复桌面活动…',locked:'屏幕锁定时暂停活动。',fullscreen:'全屏应用中暂停活动。',task:'任务结束后继续活动。',panel:'收起控制面板后继续活动。',quiet:'安静时段内暂停自主活动。',disabled:'自主走动已关闭。',focus:'专注结束后继续活动。',away:'等你回来再继续活动。',hover:'鼠标移开后继续，拖动可打断。',display:'等待显示器就绪。'})[m.pauseReason]||'桌面活动已暂停。':labels[m.phase]||'安静陪着你';$('motion-pause').hidden=paused;$('motion-resume').hidden=!paused}
-
-  const play=async(name,label)=>{await call('prank',{name});$('action-state').textContent=`正在桌宠上播放：${label}`}
-  for(const [name,label,description]of ACTIONS){const b=document.createElement('button');b.type='button';b.className='action-tile';b.setAttribute('aria-label',`播放${label}`);const preview=document.createElement('span');preview.className='action-art';preview.dataset.sprite=name;preview.setAttribute('aria-hidden','true');b.append(preview,text('span',label));if(description)b.append(text('small',description));b.addEventListener('click',async()=>{b.disabled=true;try{await play(name,label)}catch(e){showError(e)}finally{b.disabled=false}});$('action-gallery').append(b)}
-  fetch('./assets/sprites/manifest.json').then(r=>{if(!r.ok)throw new Error('动作资源不可用');return r.json()}).then(manifest=>{for(const node of [...document.querySelectorAll('[data-sprite]'),$('climb-preview'),$('ledge-preview')]){const name=node.dataset.sprite||node.id.replace('-preview','');const a=manifest.anims[name];if(!a)throw new Error(`缺少动作：${name}`);const h=node.closest('.new-actions')?132:78;const w=h*a.w/a.h;node.style.width=`${w}px`;node.style.height=`${h}px`;node.style.backgroundImage=`url('./assets/sprites/${a.file}')`;node.style.backgroundSize=`${w*a.frames}px ${h}px`;if(name==='ledge'&&node.id)node.style.backgroundPosition=`-${w*3}px 0`}}).catch(showError)
-  submit('todo-form',async()=>{await call('todo:add',{text:$('todo-text').value,due:dateValue($('todo-due').value)});$('todo-text').value=''})
-  submit('reminder-form',async()=>{await call('reminder:add',{text:$('reminder-text').value,at:dateValue($('reminder-at').value),repeat:$('reminder-repeat').value});$('reminder-text').value=''})
-  submit('goal-form',async()=>{await call('goal:add',{title:$('goal-title').value,detail:$('goal-detail').value,every:$('goal-every').value,at:$('goal-at').value});$('goal-title').value='';$('goal-detail').value=''})
-  submit('memory-form',async()=>{await call('memory:add',{text:$('memory-text').value});$('memory-text').value=''})
   submit('agenda-form',async()=>{await call('settings:set',agendaPayload(current.data.settings,{enabled:$('agenda-enabled').checked,morningBrief:$('agenda-morning').checked,workspacePulse:$('agenda-workspace').checked,agendaPerDay:Number($('agenda-limit').value),summaryTime:$('agenda-summary-time').value}));$('agenda-saved').textContent='日程设置已保存'})
-  bind('pomo-start',()=>call('pomodoro:start',{minutes:Number($('pomo-minutes').value)}));bind('pomo-stop',()=>call('pomodoro:stop'))
   submit('observation-form',async()=>{await call('observation:set',observationPayload({enabled:$('observe-enabled').checked,accessibility:$('observe-text').checked,consented:$('observe-consent').checked,intervalSeconds:Number($('observe-interval').value),maxPerHour:Number($('observe-max').value),excludeApps:$('observe-exclude').value}));await refreshObservation()})
   bind('observe-pause',()=>call('screen:pause',{minutes:60}))
   const refreshObservation=async()=>{current.observer.capabilities=await invoke('observer_capabilities');render()}
@@ -170,59 +75,13 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
   const textSupported=initial.observer.capabilities?.accessibilitySupported??['macos','darwin'].includes(platform)
   for(const id of ['observe-text-option','observe-text-help','observe-accessibility'])$(id).hidden=!textSupported
   submit('companion-settings',async()=>{await call('settings:set',{backend:$('companion-backend').value,dshExe:$('companion-dsh').value,sourceProfile:$('companion-profile').value||'desktop',provider:$('companion-provider').value,model:$('companion-dsh-model').value,codexExe:$('companion-codex').value.trim(),codexModel:$('companion-model').value.trim(),codexGlanceModel:$('companion-glance-model').value.trim(),cwd:$('companion-cwd').value.trim(),permission:$('companion-permission').value,nagMinutes:Number($('nag-minutes').value),quietStart:$('quiet-start').value,quietEnd:$('quiet-end').value});$('companion-saved').textContent='已保存'})
-  bind('tidy-choose',async()=>{const path=await invoke('choose_folder');if(path)$('tidy-folder').value=path})
+  bind('companion-cwd-choose',async()=>{const path=await invoke('choose_workspace');if(path)$('companion-cwd').value=path})
   bind('watch-choose',async()=>{const path=await invoke('choose_folder');if(path)$('watch-folders').value=[$('watch-folders').value.trim(),path].filter(Boolean).join('\n')})
   submit('watch-form',async()=>{await call('watch:set',watchPayload({enabled:$('watch-enabled').checked,folders:$('watch-folders').value,mode:$('watch-mode').value}));$('watch-saved').textContent='已保存；从新的文件基线开始发现。'})
-  bind('tidy-preview',()=>call('tidy:preview',{folder:$('tidy-folder').value}))
-  bind('tidy-apply',()=>call('tidy:apply'));bind('tidy-undo',()=>call('tidy:undo'));bind('tidy-cancel',()=>call('tidy:cancel'))
-  bind('growth-reflect',()=>call('growth:reflect'))
-  bind('agenda-brief',()=>call('agenda:brief'));bind('agenda-pulse',()=>call('agenda:pulse'));bind('agenda-tip',()=>call('agenda:tip'));bind('summary-now',()=>call('summary:now'))
   submit('weather-form',async()=>{await call('settings:set',{weatherCity:$('weather-city').value.trim()});await call('weather:refresh')})
   bind('update-check',async()=>{const value=await call('update:check');$('update-state').textContent=value?`最新发布：${value.version}`:'暂时没有新发布'})
   if(!['windows','win32'].includes(platform))$('companion-backend').querySelector('[value="dsh"]').disabled=true
-  function button(label,command,args) {const n=text('button',label);n.type='button';n.addEventListener('click',()=>call(command,args).catch(showError));return n}
-  function list(id,items,render){$(id).replaceChildren(...items.map(render))}
-  function row(title,meta=''){const n=text('div','', 'companion-item');const body=text('div','');body.append(text('p',title),text('small',meta));n.append(body);return n}
-  function render() {
-    const d=current.data
-    $('clipboard-watch-state').textContent=clipboardWatchStatus(d.settings,current.clipboard)
-    const clipboardSupported=current.clipboard?.supported===true
-    $('clipboard-watch-enabled').disabled=!clipboardSupported;$('clipboard-watch-save').disabled=!clipboardSupported
-    renderMotion()
-    $('chat-welcome').hidden=d.chat.messages.length>0
-    $('chat-send').disabled=!!current.chatTask; $('chat-stop').hidden=!current.chatTask
-    if(!current.chatTask){$('chat-live').textContent='';$('chat-pending').hidden=true}
-    list('chat-messages',d.chat.messages.slice(-100),m=>text('div',m.text,`chat-message ${m.role}`))
-    const alerts=d.alerts||[]
-    $('watch-state').textContent=watchStatus(d,current.files)
-    list('watch-ready',fileGroups(d.watch?.ready),g=>{const n=row(`${g.files.length} 个新文件`,g.folder);n.append(text('p',g.files.slice(0,3).map(f=>f.name).join('、')+(g.files.length>3?'…':'')));const controls=text('div','','quick-actions');const preview=text('button','先看怎么整理');preview.type='button';preview.addEventListener('click',async()=>{preview.disabled=true;try{await call('watch:preview',{folder:g.folder});$('tidy-folder').value=g.folder;$('tidy-plan').scrollIntoView({block:'center'});$('tidy-apply').focus({preventScroll:true})}catch(e){showError(e)}finally{preview.disabled=false}});controls.append(preview,button('这批不用','watch:ignore',{folder:g.folder}));n.append(controls);return n})
-    $('alert-inbox').hidden=!alerts.length;$('alert-inbox-title').textContent=`待处理提醒 · ${alerts.length}`
-    list('alert-list',alerts,a=>{const n=row(a.text,`${date(a.createdAt)}${a.count?` · 已提醒 ${a.count} 次`:''}`);const controls=text('div','','quick-actions');const choices=a.kind==='todo-soon'?[['done','已完成'],['ok','马上做']]:a.kind==='todo-overdue'?[['done','已完成'],['later','推迟 1 小时']]:['reminder','pomodoro'].includes(a.kind)?[['ok','知道了'],['snooze','10 分钟后']]:[];for(const [i,[choice,label]]of choices.entries()){const b=button(label,'alert:respond',{id:a.id,choice});if(i===0)b.classList.add('primary');controls.append(b)}if(a.kind==='goal-ask'){const b=text('button','查看目标');b.type='button';b.addEventListener('click',()=>select('goals'));controls.append(b)}n.append(controls);return n})
-    list('todo-list',d.todos,t=>{const n=row(t.text,t.done?'已完成':date(t.due));const check=document.createElement('input');check.type='checkbox';check.checked=!!t.done;check.setAttribute('aria-label',`完成 ${t.text}`);check.addEventListener('change',()=>call('todo:update',{id:t.id,patch:{done:check.checked}}).catch(showError));n.prepend(check);n.append(button('移除','todo:remove',{id:t.id}));return n})
-    list('reminder-list',d.reminders.filter(r=>!r.fired),r=>{const n=row(r.text,date(r.at));n.append(button('移除','reminder:remove',{id:r.id}));return n})
-    list('goal-list',d.goals,g=>{const n=row(g.title,`${({active:'进行中',paused:'已暂停',waiting:'等你决定',done:'已完成'})[g.status]||g.status} · 下次 ${date(g.nextAt)}`);const controls=text('div','', 'quick-actions');controls.append(button('推进一步','goal:run',{id:g.id}),button(g.status==='active'?'暂停':'继续','goal:update',{id:g.id,patch:{status:g.status==='active'?'paused':'active'}}),button('移除','goal:remove',{id:g.id}));if(g.question){controls.append(text('p',g.question.question));for(const option of g.question.options||[])controls.append(button(option,'goal:answer',{id:g.id,answer:option}))}const logs=text('div','', 'goal-log');for(const l of (g.log||[]).slice(-3))logs.append(text('p',`${date(l.ts)} ${l.text}`));n.append(controls,logs);return n})
-    list('memory-list',d.memories,m=>{const n=row(m.text);n.append(button('忘记','memory:remove',{id:m.id}));return n})
-    list('legacy-tasks',d.tasks||[],t=>{const n=row(t.title||t.prompt,`${t.status==='running'?'上次未完成':t.status} · ${date(t.startedAt)}`);if(t.result)n.append(text('p',t.result));if(t.error)n.append(text('p',t.error,'error'));n.append(button('重新开始','legacy:retry',{id:t.id}));return n})
-    $('agenda-state').textContent=agendaStatus(d,current.agenda)
-    list('background-tasks',d.backgroundTasks||[],t=>{const n=row(backgroundText(t),`${backgroundLabel(t.kind)} · ${t.automatic?'自动':'手动'} · ${date(t.at)}`);if(t.kind==='reflect'){const b=text('button','查看成长记录');b.addEventListener('click',()=>select('growth'));n.append(b)}if(t.kind==='summary')n.append(button('打开小结','summary:open',{id:t.id,at:t.at}));return n})
-    list('pending-actions',d.pendingActions||[],item=>{const a=item.action;const n=row(a.action==='file.move'?`移动 ${a.from} → ${a.to}`:a.action==='open'?`打开 ${a.target}`:a.text);n.append(button('确认','action:accept',{id:item.id}),button('不要','action:reject',{id:item.id}));return n})
-    const question=d.chat.question;$('chat-question').hidden=!question
-    $('chat-question').replaceChildren()
-    if(question){$('chat-question').append(text('p',question.question));for(const option of question.options||[])$('chat-question').append(button(option,'chat:answer',{answer:option}))}
-    const plan=d.tidyPreview
-    list('tidy-plan',plan?.moves||[],m=>row(m.name,`→ ${m.cat}`))
-    $('tidy-apply').hidden=!plan?.moves?.length
-    $('tidy-cancel').hidden=!plan
-    $('weather-state').textContent=d.weather?`${d.weather.city} · ${d.weather.desc||''} ${d.weather.temp}°C`:''
-    $('growth-level').textContent=`Lv.${d.growth.level||1} · ${d.growth.xp||0} XP`
-    $('growth-affection').textContent=`好感度 ${d.pet.affection||0} · ${moodLabel(d.pet.mood)}`
-    $('growth-notes').replaceChildren(...(d.growth.notes||[]).map(n=>text('p',typeof n==='string'?n:n.text||'')))
-    $('growth-diary').replaceChildren(...(d.growth.diary||[]).slice(-10).map(n=>text('p',typeof n==='string'?n:`${n.day||n.date||''} ${n.text||''}`)))
-    list('activity-list',d.activity.slice(0,100),a=>row(a.text,date(a.ts)))
-    $('pomo-state').textContent=d.pomodoro.until>Date.now()?`专注至 ${date(d.pomodoro.until)}`:'尚未开始'
-    const o=current.observer, conf=d.observation
-    $('observer-state').textContent=observationStatus(conf,o);$('observer-permissions').textContent=observationPermissions(o.capabilities)
-  }
+  submit('motion-preferences',async()=>{await call('settings:set',{wander:$('motion-wander').checked,climbWindows:$('motion-windows').checked,crossScreens:$('motion-cross').checked,hideOnFullscreen:$('motion-fullscreen').checked});$('motion-preferences-state').textContent='桌面活动偏好已保存'})
   function fill() {const d=current.data,s=d.settings,o=d.observation
     $('watch-enabled').checked=d.watch?.native?.enabled===true && d.watch.native.consentVersion===1;$('watch-folders').value=(s.watchFolders||[]).join('\n');$('watch-mode').value=s.rules?.tidy||'ask'
     $('agenda-enabled').checked=s.rules?.agenda!=='off';$('agenda-morning').checked=s.morningBrief!==false;$('agenda-workspace').checked=s.workspacePulse!==false;$('agenda-limit').value=s.agendaPerDay??6;$('agenda-summary-time').value=s.summaryTime||''
@@ -236,7 +95,52 @@ export function mountCompanion({invoke, initial, showError, onTasks, platform}) 
     $('observe-enabled').checked=!!o.enabled;$('observe-text').checked=!!o.accessibility;$('observe-consent').checked=o.accessibility?o.consentVersion===2:[1,2].includes(o.consentVersion);$('observe-interval').value=o.intervalSeconds;$('observe-max').value=o.maxPerHour;$('observe-exclude').value=o.excludeApps
     for(const [id,key]of [['companion-backend','backend'],['companion-dsh','dshExe'],['companion-profile','sourceProfile'],['companion-provider','provider'],['companion-dsh-model','model'],['companion-codex','codexExe'],['companion-model','codexModel'],['companion-glance-model','codexGlanceModel'],['companion-cwd','cwd'],['companion-permission','permission'],['quiet-start','quietStart'],['quiet-end','quietEnd']])$(id).value=s[key]||''
   }
-  function select(name,{focus=false}={}) {const files=name==='files';if(files)name='todos';if(!tabs.some(([n])=>n===name))return;tab=name;for(const [n]of tabs){const node=$(`view-${n}`);node.hidden=n!==name;nav.querySelector(`[data-tab="${n}"]`).setAttribute('aria-current',String(n===name))}const label=tabs.find(([n])=>n===name)[1];$('companion-title').textContent=name==='chat'?'今天也一起。':label;$('companion-subtitle').textContent=name==='chat'?`${current.data.settings.backend==='dsh'?'DeepSeek Harness':'Codex'} · 随时聊聊`:name==='actions'?'随心动一动，安静陪着你。':'Claude Ojousama';if(name==='actions'){fill();refreshMotion().catch(showError)}if(name==='activity'||name==='todos')fill();if(name==='settings'){fill();refreshObservation().catch(showError);refreshDesktop().catch(showError)}render();if(files){$('file-discovery').scrollIntoView({block:'start'});$('file-discovery').focus({preventScroll:true})}if(focus&&name==='chat')$('chat-text').focus()}
-  fill();select(tab)
-  return { previewClipboard, motionUpdated(value){if(motionValue){motionValue.motion=value;renderMotion()}}, update(value){current=value;render()}, select, taskUpdated(tasks){const task=tasks.find(t=>t.id===current.chatTask);$('chat-live').textContent=task ? task.output||task.activity : ''; $('chat-send').disabled=!!current.chatTask; $('chat-stop').hidden=!current.chatTask; $('chat-pending').hidden=!task?.pending} }
+
+  function button(label,command,args){const b=text('button',label);b.type='button';b.addEventListener('click',async()=>{b.disabled=true;try{await call(command,args)}catch(e){showError(e)}finally{b.disabled=false}});return b}
+  function row(title,meta='',body=''){const n=text('article','','record-row');n.append(text('p',title,'record-title'));if(meta)n.append(text('small',meta));if(body)n.append(text('p',body,'record-body'));return n}
+  function render(){
+    const d=current.data, list=$('record-items');list.replaceChildren();tasks.hidden=filter!=='tasks'
+    for(const b of $('record-filters').children)b.setAttribute('aria-current',String(b.dataset.filter===filter))
+    if(filter==='activity'){
+      for(const t of d.backgroundTasks||[])list.append(row(backgroundText(t),`${backgroundLabel(t.kind)} · ${t.automatic?'自动':'手动'} · ${date(t.at)}`,t.kind==='reflect'?'':t.result))
+      for(const a of d.activity||[])list.append(row(a.text,date(a.ts)))
+    }else if(filter==='chat'){
+      for(const m of (d.chat.messages||[]).slice(-100))list.append(row(m.text,`${m.role==='user'?'你':'大小姐'} · ${date(m.ts)}`))
+    }else if(filter==='tasks'){
+      for(const t of d.tasks||[])list.append(row(t.title||t.prompt,`${t.status} · ${date(t.startedAt)}`,t.result||t.error))
+    }else if(filter==='todos'){
+      for(const a of d.alerts||[])list.append(row(a.text,`待处理 · ${date(a.createdAt)}`))
+      for(const t of d.todos||[]){const n=row(t.text,t.done?'已完成':date(t.due));n.append(button(t.done?'重新打开':'已完成','todo:update',{id:t.id,patch:{done:!t.done}}),button('移除','todo:remove',{id:t.id}));list.append(n)}
+      for(const r of d.reminders||[]){const n=row(r.text,`${date(r.at)}${r.fired?' · 已提醒':''}`);n.append(button('移除','reminder:remove',{id:r.id}));list.append(n)}
+    }else if(filter==='goals'){
+      for(const g of d.goals||[]){const n=row(g.title,`${({active:'进行中',paused:'已暂停',waiting:'等待回答',done:'已完成'})[g.status]||g.status} · 下次 ${date(g.nextAt)}`,g.detail);n.append(button(g.status==='active'?'暂停':'继续','goal:update',{id:g.id,patch:{status:g.status==='active'?'paused':'active'}}),button('移除','goal:remove',{id:g.id}));for(const l of (g.log||[]).slice(-3))n.append(text('p',`${date(l.ts)} ${l.text}`,'record-body'));list.append(n)}
+    }else if(filter==='files'){
+      for(const g of fileGroups(d.watch?.ready))list.append(row(`${g.files.length} 个新文件`,g.folder,g.files.map(f=>f.name).join('、')))
+      if(d.tidyLog?.moves?.length)list.append(button('撤销上次整理','tidy:undo',{}))
+      for(const m of d.tidyLog?.moves||[])list.append(row(m.name||m.from,'整理记录',`${m.from} → ${m.to}`))
+    }else if(filter==='growth'){
+      list.append(row(`Lv.${d.growth.level||1} · ${d.growth.xp||0} XP`,`好感度 ${d.pet.affection||0} · ${moodLabel(d.pet.mood)}`))
+      for(const m of d.memories||[]){const n=row(m.text,'记住的事');n.append(button('忘记','memory:remove',{id:m.id}));list.append(n)}
+      for(const n of [...(d.growth.notes||[]),...(d.growth.diary||[])])list.append(row(typeof n==='string'?n:n.text,n.day||n.date||''))
+    }
+    if(!list.childElementCount&&filter!=='tasks')list.append(text('p','这里还没有记录。','empty-state'))
+    $('clipboard-watch-state').textContent=clipboardWatchStatus(d.settings,current.clipboard)
+    for(const id of ['clipboard-watch-enabled','clipboard-watch-save'])$(id).disabled=current.clipboard?.supported!==true
+    $('watch-saved').textContent=watchStatus(d,current.files)
+    $('agenda-saved').textContent=agendaStatus(d,current.agenda)
+    $('observer-state').textContent=observationStatus(d.observation,current.observer)
+    $('observer-permissions').textContent=observationPermissions(current.observer.capabilities)
+    $('weather-state').textContent=d.weather?`${d.weather.city} · ${d.weather.desc||''} ${d.weather.temp}°C`:''
+  }
+  function select(name){
+    if(name==='settings'||name==='actions')tab='settings'
+    else{tab='records';if(filters.some(([n])=>n===name))filter=name}
+    records.hidden=tab!=='records';preferences.hidden=tab!=='settings'
+    for(const b of nav.children)b.setAttribute('aria-current',String(b.dataset.tab===tab))
+    $('companion-title').textContent=tab==='settings'?'按你的节奏。':'一起做过的事'
+    if(tab==='settings'){fill();refreshObservation().catch(showError);refreshDesktop().catch(showError)}
+    render()
+  }
+  fill();select('records')
+  return{update(value){current=value;render()},select,taskUpdated(){},motionUpdated(){},previewClipboard(){return invoke('open_pet')}}
 }

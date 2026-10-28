@@ -29,6 +29,9 @@ pub fn defaults() -> Value {
     data["settings"]["crossScreens"] = json!(true);
     data["settings"]["motionPausedUntil"] = json!(0);
     data["settings"]["clipboardWatchConsent"] = json!(0);
+    data["settings"]["companionPausedUntil"] = json!(0);
+    data["settings"]["petSetupVersion"] = json!(0);
+    data["settings"]["rules"]["tidy"] = json!("auto");
     data["watch"]["ready"] = json!([]);
     data["watch"]["native"] =
         json!({"enabled":false,"consentVersion":0,"autoRoots":null,"autoError":""});

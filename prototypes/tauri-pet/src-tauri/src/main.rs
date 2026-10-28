@@ -11,6 +11,7 @@ mod desktop;
 mod desktop_entry;
 mod file_watch;
 mod growth;
+mod intent;
 mod motion;
 mod observer;
 mod service;
@@ -129,6 +130,7 @@ struct State {
     positionable: bool,
     desktop_entry: Arc<Mutex<desktop_entry::Controller>>,
     clipboard_pending: AtomicBool,
+    pet_interacting: AtomicBool,
 }
 
 struct DesktopHost {
@@ -183,23 +185,21 @@ fn request_clipboard(app: &tauri::AppHandle) -> Result<(), String> {
     let state = app.state::<State>();
     state.service.clipboard_reset();
     state.clipboard_pending.store(true, Ordering::Relaxed);
-    if let Err(error) = panel(app) {
+    if let Err(error) = open_pet(app.clone()) {
         state.clipboard_pending.store(false, Ordering::Relaxed);
         return Err(error);
     }
-    app.emit_to("panel", "panel:tab", "chat")
-        .map_err(|e| e.to_string())?;
-    app.emit_to("panel", "clipboard:request", ())
+    app.emit_to("pet", "clipboard:request", ())
         .map_err(|e| e.to_string())
 }
 #[tauri::command]
 fn clipboard_pending(window: WebviewWindow, state: tauri::State<State>) -> Result<bool, String> {
-    panel_only(&window)?;
+    pet_or_panel(&window)?;
     Ok(state.clipboard_pending.swap(false, Ordering::Relaxed))
 }
 #[tauri::command]
 async fn clipboard_preview(window: WebviewWindow) -> Result<Value, String> {
-    panel_only(&window)?;
+    pet_or_panel(&window)?;
     tauri::async_runtime::spawn_blocking(move || {
         let allowed = || -> Result<bool, String> {
             let detection = observer::screen_supported();
@@ -210,7 +210,7 @@ async fn clipboard_preview(window: WebviewWindow) -> Result<Value, String> {
             ))
         };
         if !allowed()? {
-            return Err("请激活面板并确认屏幕已解锁，再读取剪贴板。".into());
+            return Err("请激活桌宠或面板并确认屏幕已解锁，再读取剪贴板。".into());
         }
         let text = arboard::Clipboard::new()
             .and_then(|mut clipboard| clipboard.get_text())
@@ -228,7 +228,7 @@ fn clipboard_offer_pending(
     window: WebviewWindow,
     state: tauri::State<State>,
 ) -> Result<bool, String> {
-    panel_only(&window)?;
+    pet_or_panel(&window)?;
     Ok(state.service.clipboard_pending())
 }
 #[tauri::command]
@@ -249,17 +249,13 @@ fn clipboard_offer_open(
         return Ok(());
     }
     state.clipboard_pending.store(false, Ordering::Relaxed);
-    if let Err(error) = panel(window.app_handle()) {
+    if let Err(error) = open_pet(window.app_handle().clone()) {
         state.service.clipboard_reset();
         return Err(error);
     }
     window
         .app_handle()
-        .emit_to("panel", "panel:tab", "chat")
-        .map_err(|e| e.to_string())?;
-    window
-        .app_handle()
-        .emit_to("panel", "clipboard:offer-request", ())
+        .emit_to("pet", "clipboard:offer-request", ())
         .map_err(|e| e.to_string())
 }
 #[tauri::command]
@@ -267,11 +263,11 @@ async fn clipboard_offer_preview(
     window: WebviewWindow,
     state: tauri::State<'_, State>,
 ) -> Result<Value, String> {
-    panel_only(&window)?;
+    pet_or_panel(&window)?;
     let service = state.service.clone();
     tauri::async_runtime::spawn_blocking(move || {
         if !window.is_focused().map_err(|e| e.to_string())? || !observer::unlocked() {
-            return Err("请激活面板并确认屏幕已解锁，再带入剪贴板内容。".into());
+            return Err("请激活桌宠或面板并确认屏幕已解锁，再带入剪贴板内容。".into());
         }
         let value = service.clipboard_take()?;
         if !window.is_focused().map_err(|e| e.to_string())? || !observer::unlocked() {
@@ -348,6 +344,37 @@ fn panel_only(window: &WebviewWindow) -> Result<(), String> {
     } else {
         Err("请从任务窗口执行此操作".into())
     }
+}
+fn pet_or_panel(window: &WebviewWindow) -> Result<(), String> {
+    if matches!(window.label(), "pet" | "panel") {
+        Ok(())
+    } else {
+        Err("请从桌宠或面板执行此操作".into())
+    }
+}
+#[tauri::command]
+fn pet_interaction(
+    window: WebviewWindow,
+    state: tauri::State<State>,
+    active: bool,
+    focus: bool,
+) -> Result<(), String> {
+    if window.label() != "pet" {
+        return Err("仅桌宠可更新交互状态".into());
+    }
+    if focus && active {
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
+    state.pet_interacting.store(active, Ordering::Relaxed);
+    Ok(())
+}
+#[tauri::command]
+fn open_pet(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app.get_webview_window("pet").ok_or("桌宠窗口不可用")?;
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())?;
+    app.emit_to("pet", "pet:compose", ())
+        .map_err(|e| e.to_string())
 }
 async fn confirm_permission(app: tauri::AppHandle, old: &str, new: &str) -> Result<(), String> {
     if new == "danger-full-access" && old != "danger-full-access" {
@@ -470,7 +497,7 @@ fn task_retry(
     state: tauri::State<State>,
     id: u64,
 ) -> Result<TaskView, String> {
-    panel_only(&window)?;
+    pet_or_panel(&window)?;
     if state.stop.load(Ordering::Relaxed) {
         return Err("应用正在退出".into());
     }
@@ -488,7 +515,7 @@ fn task_approval(
     request_id: Value,
     accept: bool,
 ) -> Result<(), String> {
-    panel_only(&window)?;
+    pet_or_panel(&window)?;
     state.tasks.approve(id, request_id, accept)
 }
 #[tauri::command]
@@ -499,7 +526,7 @@ fn task_answer(
     request_id: Value,
     answers: Value,
 ) -> Result<(), String> {
-    panel_only(&window)?;
+    pet_or_panel(&window)?;
     state.tasks.answer(id, request_id, answers)
 }
 
@@ -595,7 +622,31 @@ async fn companion_command(
     if window.label() != "panel"
         && !matches!(
             command.as_str(),
-            "screen:pause" | "alert:ack" | "alert:respond" | "pomodoro:stop" | "pet:touch"
+            "screen:pause"
+                | "alert:ack"
+                | "alert:respond"
+                | "pomodoro:stop"
+                | "pet:touch"
+                | "chat:send"
+                | "chat:new"
+                | "chat:answer"
+                | "notice:respond"
+                | "notice:shown"
+                | "companion:pause"
+                | "prank"
+                | "todo:add"
+                | "reminder:add"
+                | "goal:add"
+                | "memory:add"
+                | "pomodoro:start"
+                | "action:accept"
+                | "action:reject"
+                | "goal:answer"
+                | "agenda:brief"
+                | "agenda:pulse"
+                | "agenda:tip"
+                | "summary:now"
+                | "growth:reflect"
         )
     {
         return Err("请从控制面板执行此操作".into());
@@ -609,7 +660,21 @@ async fn companion_command(
             confirm_permission(window.app_handle().clone(), &previous, permission).await?;
         }
     }
-    if command == "watch:set" && args["enabled"] == true && args["mode"] == "auto" {
+    if command == "watch:set"
+        && args["enabled"] == true
+        && args["mode"] == "auto"
+        && file_watch::auto_confirmation_required(
+            &state.service.data.snapshot(),
+            &file_watch::roots(
+                &args["folders"],
+                &window
+                    .app_handle()
+                    .path()
+                    .download_dir()
+                    .map_err(|e| e.to_string()),
+            )?,
+        )
+    {
         let app = window.app_handle().clone();
         let scope = if args["folders"].is_null() {
             "系统下载文件夹".to_string()
@@ -704,7 +769,7 @@ async fn observer_windows(
     window: WebviewWindow,
     state: tauri::State<'_, State>,
 ) -> Result<Vec<Value>, String> {
-    panel_only(&window)?;
+    pet_or_panel(&window)?;
     let config = state.service.data.snapshot()["observation"].clone();
     tauri::async_runtime::spawn_blocking(move || {
         observer::choices(
@@ -746,7 +811,7 @@ async fn look_now(
     state: tauri::State<'_, State>,
     chosen: Option<u32>,
 ) -> Result<(), String> {
-    panel_only(&window)?;
+    pet_or_panel(&window)?;
     let service = state.service.clone();
     tauri::async_runtime::spawn_blocking(move || service.look(chosen, true))
         .await
@@ -1254,6 +1319,17 @@ fn start_motion(
                     pause_reason
                 } else if busy {
                     "task"
+                } else if window
+                    .app_handle()
+                    .state::<State>()
+                    .pet_interacting
+                    .load(Ordering::Relaxed)
+                {
+                    "interaction"
+                } else if d["settings"]["companionPausedUntil"].as_u64().unwrap_or(0)
+                    > companion::now()
+                {
+                    "user"
                 } else if panel_visible {
                     "panel"
                 } else if companion::quiet_hours(&d) {
@@ -1468,14 +1544,34 @@ fn start_motion(
                     .body_context(behavior::Context {
                         at: companion::now(),
                         unlocked: session_unlocked,
-                        ambient: visible && !hidden_for_fullscreen && !panel_open,
+                        ambient: visible
+                            && !hidden_for_fullscreen
+                            && !panel_open
+                            && !window
+                                .app_handle()
+                                .state::<State>()
+                                .pet_interacting
+                                .load(Ordering::Relaxed),
                         free: visible
                             && grounded
                             && !snapshot.paused
                             && !panel_open
+                            && !window
+                                .app_handle()
+                                .state::<State>()
+                                .pet_interacting
+                                .load(Ordering::Relaxed)
                             && !inside
                             && snapshot.last_sample.elapsed() >= Duration::from_secs(10),
-                        may_sleep: visible && grounded && resting && !panel_open,
+                        may_sleep: visible
+                            && grounded
+                            && resting
+                            && !panel_open
+                            && !window
+                                .app_handle()
+                                .state::<State>()
+                                .pet_interacting
+                                .load(Ordering::Relaxed),
                     });
             }
             if same_owner {
@@ -1586,6 +1682,7 @@ fn main() {
                 WebviewUrl::App("index.html?view=pet".into()),
             )
             .title("Ojousama Lite")
+            .focused(false)
             .inner_size(360.0, 340.0)
             .resizable(false)
             .transparent(positionable)
@@ -1687,6 +1784,7 @@ fn main() {
                 positionable,
                 desktop_entry: Arc::new(Mutex::new(desktop_entry::Controller::default())),
                 clipboard_pending: AtomicBool::new(false),
+                pet_interacting: AtomicBool::new(false),
             });
             {
                 let state = app.state::<State>();
@@ -1776,6 +1874,8 @@ fn main() {
             task_approval,
             task_answer,
             set_hit_regions,
+            pet_interaction,
+            open_pet,
             set_reduced_motion,
             drag_begin,
             drag_move,

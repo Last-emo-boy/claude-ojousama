@@ -141,3 +141,12 @@ test('old speech still opens chat and unexpected destinations cannot replace fix
   assert.equal(bubbleAction({source:'task',taskId:7,tab:'goals'}).args.tab,'tasks')
   assert.equal(bubbleAction({source:'alert',tab:'chat'}).args.tab,'todos')
 })
+
+test('inline actions retain their bounded lease, kind and full result without reopening dismissed tokens',()=>{
+  const s=createBubbleState(),n={text:'整理好了',kind:'tidy',token:123,buttons:[{id:'undo',label:'撤销'}],until:20000}
+  s.speak(n,0);assert.equal(s.read(1).buttons[0].id,'undo');assert.equal(s.read(1).token,123)
+  s.dismiss();s.speak(n,100);assert.equal(s.read(101),null)
+  s.speak({...n,token:124},200);assert.equal(s.read(20000),null)
+  s.speak({text:'完整结果'.repeat(100),expanded:true,until:40000},21000)
+  assert.equal(s.read(21001).expanded,true);assert.equal(s.read(21001).text.length,400)
+})

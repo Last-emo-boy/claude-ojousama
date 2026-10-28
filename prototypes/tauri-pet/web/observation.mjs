@@ -10,6 +10,7 @@ export function observationStatus(config, observer, now = Date.now()) {
   const ready = caps ? caps.ready : observer.permission
   if (!ready) return caps?.screenSupported === false ? '当前桌面需系统主动共享，后台观察不可用' : '请授权屏幕访问，或开启并授权辅助功能读字'
   return ({
+    'companion-paused':'陪伴已暂停，稍后自动继续',
     starting: '正在恢复桌面状态…',
     locked: '解锁后继续主动观察',
     paused: '主动观察已暂停',

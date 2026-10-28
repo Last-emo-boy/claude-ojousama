@@ -12,6 +12,7 @@ export function createBubbleState() {
   const seen = new Map()
   let taskNotice = null
   let speech = null
+  let speechToken = 0
   let error = null
   let alert = null
   let alertToken = 0
@@ -45,7 +46,9 @@ export function createBubbleState() {
     },
     speak(value, now = Date.now()) {
       const text = String(value?.text || '').trim()
-      if (text) speech = { source: 'speech', label: '大小姐', text, tab:value.tab, until: Math.min(Number(value.until) || now + 12000, now + 30000) }
+      if(value?.token && value.token<=speechToken)return
+      if(value?.token)speechToken=value.token
+      if (text) speech = { source: 'speech', label: '大小姐', text, tab:value.tab, token:value.token,kind:value.kind,buttons:value.buttons||[],expanded:value.expanded===true, until: Math.min(Number(value.until) || now + 12000, now + 30000) }
     },
     alert(value, now = Date.now()) {
       if (value?.clear !== undefined) {

@@ -1,7 +1,8 @@
 import { isActive, orderedTasks, upsertTask, currentTask, selectedTask, presentation, settingsFrom, pendingKey, alphaBands, placeBands, mirrorBands } from './model.mjs'
 import { createDragQueue } from './drag.mjs'
 import { mountCompanion } from './companion.mjs'
-import { createBubbleState, bubbleAction } from './bubble.mjs'
+import { createBubbleState } from './bubble.mjs'
+import { clipboardPrompt, appendDraft, clipboardTodo } from './desktop-entry.mjs'
 import { spritePlayback } from './behavior.mjs'
 
 const app = document.querySelector('#app')
@@ -22,6 +23,15 @@ const state = {
 }
 let companionPanel
 let companionBubble = null
+let petCompanion = null
+let composing = false
+let petTools = false
+let expandedText = ''
+let pendingPetKey = ''
+let companionPendingKey = ''
+let seenSetupToken = null
+let petInteractionActive = null
+let dismissedPetPendingKey = ''
 const bubbles = createBubbleState()
 let alertControlsKey = ''
 let shownAlertToken = null
@@ -98,13 +108,17 @@ function mountPet() {
       <div class="pet-bubble-heading"><span id="pet-status" class="status"></span><button id="pet-dismiss" type="button" aria-label="收起气泡">×</button></div>
       <p id="pet-message" class="pet-message"></p>
       <p id="pet-error" class="pet-error" role="alert"></p>
+      <div id="pet-pending" class="pending-card hidden"></div>
+      <form id="pet-compose" class="pet-compose" hidden><label for="pet-input" class="visually-hidden">和大小姐说话</label><textarea id="pet-input" rows="2" maxlength="20000" required placeholder="说点什么…" spellcheck="false"></textarea><div class="compose-footer"><button id="pet-tools-toggle" type="button" class="subtle" aria-label="更多桌宠操作">＋</button><button id="pet-send" class="primary" type="submit">发送</button></div></form>
+      <div id="pet-tools" class="pet-tools" hidden><div class="quick-actions"><button id="pet-clipboard" type="button">剪贴板</button><button id="pet-look" type="button">看当前窗口</button><button id="pet-note" type="button">贴便签</button><button id="pet-focus" type="button">专注 25 分钟</button><button id="pet-new-chat" type="button">新对话</button><button type="button" data-pet-template="待办：">记待办</button><button type="button" data-pet-template="目标：">设目标</button><button type="button" data-pet-template="提醒我10分钟后">设提醒</button><button type="button" data-pet-template="记住：">记住偏好</button></div><label>准备点什么<select id="pet-background"><option value="agenda:brief">今日简报</option><option value="agenda:pulse">工作区巡检</option><option value="agenda:tip">小技巧</option><option value="summary:now">今日小结</option><option value="growth:reflect">整理记忆</option></select></label><button id="pet-prepare" type="button">交给我</button><label>小动作<select id="pet-animation"><option value="wave">挥手</option><option value="stretch">伸懒腰</option><option value="dance">跳舞</option><option value="read">读书</option><option value="magic">魔术</option></select></label><button id="pet-play" type="button">做这个动作</button></div>
+      <section id="pet-clipboard-preview" hidden><textarea id="pet-clipboard-text" maxlength="24000" aria-label="剪贴板预览"></textarea><p class="setting-help">仅本机预览，带入草稿后可修改。</p><div class="quick-actions"><button type="button" data-clipboard="explain">解释</button><button type="button" data-clipboard="translate">翻译</button><button type="button" data-clipboard="fix">修 Bug</button><button type="button" data-clipboard="summary">总结</button><button type="button" data-clipboard="todo">记成待办</button><button id="pet-clipboard-clear" type="button">清除</button></div></section>
       <div class="pet-actions">
         <div id="pet-alert-actions" class="pet-alert-actions" hidden></div>
-        <button id="pet-stop" class="danger hidden" type="button">停止</button>
-        <button id="pet-open" type="button">新任务</button>
+        <button id="pet-stop" class="danger hidden" type="button">停止</button><button id="pet-retry" class="hidden" type="button">再试一次</button>
+        <button id="pet-open" type="button">聊两句</button>
       </div>
     </section>
-    <div id="pet-menu" class="pet-menu" role="menu" aria-label="桌宠操作" hidden><button id="pet-menu-chat" type="button" role="menuitem">聊聊今天 ↗</button><button id="pet-menu-touch" type="button" role="menuitem">摸摸头</button><button id="pet-perch" type="button" role="menuitem">爬上窗口</button><button id="pet-menu-walk" type="button" role="menuitem">去走走</button><button id="pet-menu-stop" type="button" role="menuitem">停步／下来</button><button id="pet-menu-actions" type="button" role="menuitem">选个动作</button><button id="pet-menu-quiet" type="button" role="menuitem">安静一小时</button></div>
+    <div id="pet-menu" class="pet-menu" role="menu" aria-label="桌宠操作" hidden><button id="pet-menu-chat" type="button" role="menuitem">聊两句</button><button id="pet-menu-touch" type="button" role="menuitem">摸摸头</button><button id="pet-perch" type="button" role="menuitem">爬上窗口</button><button id="pet-menu-walk" type="button" role="menuitem">去走走</button><button id="pet-menu-stop" type="button" role="menuitem">停步／下来</button><button id="pet-menu-actions" type="button" role="menuitem">更多操作</button><button id="pet-menu-records" type="button" role="menuitem">记录</button><button id="pet-menu-settings" type="button" role="menuitem">设置</button><button id="pet-menu-quiet" type="button" role="menuitem">安静一小时</button></div>
     <canvas id="sprite" role="button" tabindex="0" aria-haspopup="menu" aria-expanded="false" aria-label="桌宠，点击聊天，右键更多操作，拖动后松手抛出"></canvas>`
   const canvas = $('sprite')
   const ratio = devicePixelRatio || 1
@@ -113,16 +127,50 @@ function mountPet() {
   spriteContext = canvas.getContext('2d')
   spriteContext.setTransform(ratio, 0, 0, ratio, 0, 0)
   spriteContext.imageSmoothingEnabled = false
-  $('pet-open').addEventListener('click', event => action(event.currentTarget, () => {
-    const next=bubbleAction(bubbles.read())
-    return invoke(next.command,next.args)
+  $('pet-open').addEventListener('click',()=>{
+    const notice=bubbles.read(),task=currentTask(state.tasks)
+    const output=notice?.source==='task' ? task?.output : notice?.text
+    if(output && output.length>105){expandedText=output;renderPet()}
+    else openPetComposer().catch(showError)
+  })
+  $('pet-dismiss').addEventListener('click',()=>{dismissedPetPendingKey=petDecisionKey();bubbles.dismiss();composing=petTools=false;expandedText='';clearClipboard();invoke('pet_interaction',{active:false,focus:false}).catch(showError);renderPet()})
+  $('pet-compose').addEventListener('submit',async event=>{
+    event.preventDefault()
+    if(state.submitting)return
+    const text=$('pet-input').value.trim();if(!text)return
+    state.submitting=true;$('pet-send').disabled=true
+    try{
+      await invoke('companion_command',{command:'chat:send',args:{text}})
+      $('pet-input').value='';composing=petTools=false;expandedText='';clearClipboard();state.error='';bubbles.error('')
+      await invoke('pet_interaction',{active:false,focus:false})
+    }catch(error){showError(error)}finally{state.submitting=false;$('pet-send').disabled=false;renderPet()}
+  })
+  $('pet-input').addEventListener('keydown',event=>{
+    if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();$('pet-compose').requestSubmit()}
+  })
+  for(const b of document.querySelectorAll('[data-pet-template]'))b.addEventListener('click',()=>{$('pet-input').value=b.dataset.petTemplate;petTools=false;renderPet();$('pet-input').focus()})
+  $('pet-tools-toggle').addEventListener('click',()=>{petTools=!petTools;renderPet()})
+  for(const [id,work] of [
+    ['pet-clipboard',()=>previewPetClipboard()],['pet-look',()=>invoke('look_now',{chosen:null})],
+    ['pet-note',()=>invoke('note_toggle')],['pet-focus',()=>invoke('companion_command',{command:'pomodoro:start',args:{minutes:25}})],
+    ['pet-new-chat',()=>invoke('companion_command',{command:'chat:new',args:{}})],
+    ['pet-prepare',async()=>{await invoke('companion_command',{command:$('pet-background').value,args:{}});$('pet-dismiss').click()}],
+    ['pet-play',()=>invoke('companion_command',{command:'prank',args:{name:$('pet-animation').value}})],
+  ])$(id).addEventListener('click',event=>action(event.currentTarget,work))
+  $('pet-clipboard-clear').addEventListener('click',()=>{clearClipboard();renderPet()})
+  for(const button of document.querySelectorAll('[data-clipboard]'))button.addEventListener('click',event=>action(event.currentTarget,async()=>{
+    const value=$('pet-clipboard-text').value.trim();if(!value)throw new Error('请先复制或粘贴文字')
+    if(button.dataset.clipboard==='todo')await invoke('companion_command',{command:'todo:add',args:{text:clipboardTodo(value)}})
+    else $('pet-input').value=appendDraft($('pet-input').value,clipboardPrompt(button.dataset.clipboard,value))
+    clearClipboard();renderPet();$('pet-input').focus()
   }))
-  $('pet-dismiss').addEventListener('click', () => { bubbles.dismiss(); renderPet() })
+  $('pet-bubble').addEventListener('pointerdown',()=>invoke('pet_interaction',{active:composing||petTools||!!$('pet-pending').textContent,focus:true}).catch(showError))
   const menu = visible => { $('pet-menu').hidden = !visible; canvas.setAttribute('aria-expanded', String(visible)); renderPet() }
-  $('pet-menu-chat').addEventListener('click', () => { menu(false); invoke('show_panel',{tab:'chat'}).catch(showError) })
+  $('pet-menu-chat').addEventListener('click', () => { menu(false); openPetComposer().catch(showError) })
   $('pet-menu-touch').addEventListener('click', event => action(event.currentTarget, async () => { await invoke('companion_command', { command: 'pet:touch', args: {} }); menu(false) }))
-  $('pet-menu-actions').addEventListener('click', () => { menu(false); invoke('show_panel', { tab: 'actions' }).catch(showError) })
-  $('pet-menu-quiet').addEventListener('click', event => action(event.currentTarget, async () => { await invoke('companion_command', { command: 'screen:pause', args: { minutes: 60 } }); await invoke('motion_command',{command:'pause'}); menu(false) }))
+  $('pet-menu-actions').addEventListener('click',()=>{menu(false);openPetComposer(true).catch(showError)})
+  for(const tab of ['settings','records'])$(`pet-menu-${tab}`).addEventListener('click',()=>{menu(false);invoke('show_panel',{tab}).catch(showError)})
+  $('pet-menu-quiet').addEventListener('click', event => action(event.currentTarget, async () => { await invoke('companion_command', { command: 'companion:pause', args: { minutes: petCompanion?.data.settings.companionPausedUntil>Date.now()?0:60 } }); menu(false) }))
   for(const [id,command]of [['pet-menu-walk','walk'],['pet-menu-stop','stop']])$(id).addEventListener('click',event=>action(event.currentTarget,async()=>{await invoke('motion_command',{command});menu(false)}))
   $('pet-perch').addEventListener('click', event => action(event.currentTarget, async () => {
     await invoke('perch_toggle')
@@ -130,6 +178,7 @@ function mountPet() {
     state.error = ''
     renderPet()
   }))
+  $('pet-retry').addEventListener('click',event=>action(event.currentTarget,async()=>{const task=currentTask(state.tasks);if(task)acceptTask(await invoke('task_retry',{id:task.id}),{select:true,snapshot:true})}))
   $('pet-stop').addEventListener('click', event => {
     const task = currentTask(state.tasks)
     if (isActive(task)) action(event.currentTarget, () => invoke('task_cancel', { id: task.id }))
@@ -137,7 +186,7 @@ function mountPet() {
   canvas.addEventListener('keydown', event => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
-      invoke('show_panel',{tab:'chat'}).catch(showError)
+      openPetComposer().catch(showError)
     }
     if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); menu(true); $('pet-menu-chat').focus() }
   })
@@ -146,7 +195,7 @@ function mountPet() {
     menu($('pet-menu').hidden)
   })
   document.addEventListener('keydown', event => {
-    if (event.key === 'Escape') { menu(false); canvas.focus() }
+    if (event.key === 'Escape') { menu(false);$('pet-dismiss').click();canvas.focus() }
     if (!$('pet-menu').hidden && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
       event.preventDefault()
       const items = [...$('pet-menu').querySelectorAll('button:not(.hidden)')]
@@ -179,7 +228,7 @@ function mountPet() {
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId)
     try {
       if (ending.drag) await ending.drag.end(point)
-      if (click) await invoke('show_panel',{tab:'chat'})
+      if (click) await openPetComposer()
     } catch (error) {
       showError(error)
     }
@@ -198,6 +247,21 @@ function mountPet() {
     shownAlertToken = null
     if (!document.hidden) { drawSprite(); renderPet() }
   })
+}
+
+async function openPetComposer(tools=false) {
+  composing=true;petTools=tools;expandedText='';dismissedPetPendingKey='';$('pet-menu').hidden=true
+  await invoke('pet_interaction',{active:true,focus:true})
+  renderPet();$('pet-input').focus()
+}
+function clearClipboard(){if(!$('pet-clipboard-preview'))return;$('pet-clipboard-preview').hidden=true;$('pet-clipboard-text').value=''}
+async function previewPetClipboard(offer=false){
+  await openPetComposer()
+  const value=await invoke(offer?'clipboard_offer_preview':'clipboard_preview')
+  if(offer&&value.action&&value.action!=='preview'){
+    $('pet-input').value=appendDraft($('pet-input').value,clipboardPrompt(value.action,value.text))
+  }else{$('pet-clipboard-text').value=value.text;$('pet-clipboard-preview').hidden=false}
+  renderPet()
 }
 
 async function loadSprites() {
@@ -292,9 +356,24 @@ function sendHitRegions() {
   })
 }
 
+function petDecisionKey(){const d=petCompanion?.data;return JSON.stringify([pendingKey(currentTask(state.tasks)),d?.chat.question,d?.pendingActions?.[0]?.id,d?.goals?.filter(g=>g.question).map(g=>[g.id,g.question])])}
+function renderPetPending(task){
+  const box=$('pet-pending')
+  if(task?.pending){box.classList.remove('hidden');companionPendingKey='';if(pendingKey(task)!==pendingPetKey){pendingPetKey=pendingKey(task);renderPending(task,box,'petQuestionKey')}return}
+  pendingPetKey='';state.petQuestionKey=''
+  const d=petCompanion?.data, item=d?.pendingActions?.[0], goal=d?.goals?.find(g=>g.question), question=d?.chat.question||goal?.question
+  const key=JSON.stringify([item?.id,question,goal?.id])
+  box.classList.toggle('hidden',!item&&!question)
+  if(companionPendingKey===key)return
+  companionPendingKey=key;box.replaceChildren()
+  const add=(label,command,args)=>{const b=element('button','',label);b.type='button';b.addEventListener('click',event=>action(event.currentTarget,()=>invoke('companion_command',{command,args})));box.append(b)}
+  if(item){const a=item.action;box.append(element('p','',a.action==='file.move'?`移动 ${a.from} → ${a.to}`:a.action==='open'?`打开 ${a.target}`:a.text));add('允许这次','action:accept',{id:item.id});add('不要','action:reject',{id:item.id})}
+  else if(question){box.append(element('p','',question.question));for(const answer of question.options||[])add(answer,goal?'goal:answer':'chat:answer',goal?{id:goal.id,answer}:{answer})}
+}
+
 function renderAlertActions(notice, visible) {
   const box=$('pet-alert-actions')
-  box.hidden=!['alert','clipboard'].includes(notice?.source)
+  box.hidden=!notice?.buttons?.length
   if(box.hidden)return
   const key=`${notice.source}:${notice.token}`
   if(alertControlsKey!==key) {
@@ -305,6 +384,9 @@ function renderAlertActions(notice, visible) {
       button.addEventListener('click',event=>action(event.currentTarget,async()=>{
         if(notice.source==='clipboard') {
           await invoke('clipboard_offer_open',{token:notice.token,action:choice.id});bubbles.clipboard({clear:notice.token})
+        } else if(notice.source==='speech') {
+          const result=await invoke('companion_command',{command:'notice:respond',args:{token:notice.token,choice:choice.id}})
+          bubbles.dismiss();if(result?.configure)await invoke('show_panel',{tab:'settings'})
         } else {
           await invoke('companion_command',{command:'alert:respond',args:{id:notice.alertId,choice:choice.id}});bubbles.clearAlert(notice.alertId)
         }
@@ -324,16 +406,32 @@ function renderPet() {
   const task = currentTask(state.tasks)
   const info = presentation(task, state.motion.phase)
   const notice = bubbles.read()
-  $('pet-bubble').hidden = !notice || !$('pet-menu').hidden
+  const pending=petDecisionKey()!==dismissedPetPendingKey && (!!task?.pending||!!petCompanion?.data.chat.question||!!petCompanion?.data.pendingActions?.length||!!petCompanion?.data.goals?.some(g=>g.question))
+  const interactive=composing||petTools||pending||!!expandedText||!!notice?.expanded
+  $('pet-bubble').hidden = !(notice||composing||petTools||pending||expandedText) || !$('pet-menu').hidden
+  $('pet-bubble').classList.toggle('interactive',interactive)
+  $('pet-compose').hidden=!composing
+  $('pet-tools').hidden=!petTools
+  renderPetPending(task)
+  if(!pending)$('pet-pending').classList.add('hidden')
+  const interaction=interactive||!$('pet-menu').hidden
+  if(petInteractionActive!==interaction){petInteractionActive=interaction;invoke('pet_interaction',{active:interaction,focus:false}).catch(showError)}
+  $('pet-menu-quiet').textContent=petCompanion?.data.settings.companionPausedUntil>Date.now()?'继续陪伴':'安静一小时'
   renderStatus($('pet-status'), task)
   const companionSpeaking = notice?.source === 'speech' && !info.active
-  $('pet-message').textContent = notice?.source === 'error' ? '' : short(notice?.text, 105)
+  $('pet-message').textContent = expandedText || (notice?.source === 'error' ? '' : notice?.expanded ? notice.text : short(notice?.text, 105))
+  $('pet-message').classList.toggle('expanded',!!expandedText||!!notice?.expanded)
+  $('pet-message').hidden=pending
   $('pet-bubble').classList.toggle('companion-speaking', !!companionSpeaking)
+  if(composing&&!notice)$('pet-status').textContent='大小姐'
   if(notice){$('pet-status').textContent=notice.label;$('pet-status').dataset.state=notice.source==='error'?'failed':notice.source==='task'?task?.status||'idle':'idle'}
   $('pet-error').textContent = notice?.source === 'error' ? notice.text : ''
   $('pet-bubble').classList.toggle('has-error', notice?.source === 'error')
-  $('pet-stop').classList.toggle('hidden', !isActive(task))
-  $('pet-open').textContent = bubbleAction(notice).label
+  $('pet-stop').classList.toggle('hidden', !isActive(task)||pending)
+  $('pet-retry').classList.toggle('hidden',!['failed','cancelled'].includes(task?.status)||pending||composing)
+  $('pet-open').textContent = (notice?.source==='task'?task?.output:notice?.text)?.length>105?'展开':'聊两句'
+  $('pet-open').hidden=composing||pending||!!expandedText||!!notice?.expanded||!!notice?.buttons?.length
+  if(notice?.kind==='setup'&&!document.hidden&&!$('pet-bubble').hidden&&seenSetupToken!==notice.token){seenSetupToken=notice.token;invoke('companion_command',{command:'notice:shown',args:{token:notice.token}}).catch(showError)}
   renderAlertActions(notice,!$('pet-bubble').hidden)
   $('pet-perch').textContent = state.motion.phase === 'perched' ? '下来' : '爬上窗口'
   $('pet-perch').classList.toggle('hidden', !state.positionable)
@@ -354,30 +452,9 @@ function mountPanel() {
       <div class="header-actions"><button id="show-pet" class="subtle" type="button">回到桌宠</button></div>
     </header>
     <p id="panel-error" class="error" role="alert"></p>
-    <form id="task-form" class="new-task">
-      <label class="section-label" for="prompt">这次做什么？</label>
-      <textarea id="prompt" placeholder="看看这个项目，或者帮我完成一件事…" required maxlength="20000" spellcheck="false"></textarea>
-      <div class="workspace-row">
-        <input id="workspace" aria-label="工作目录" placeholder="选择工作目录" required spellcheck="false" autocapitalize="off">
-        <button id="choose-workspace" type="button">选择</button>
-      </div>
-      <div class="compose-footer">
-        <label class="permission-control" for="permission">权限<select id="permission"><option value="read-only">只读</option><option value="workspace-write">工作区可写</option><option value="danger-full-access">完全访问（谨慎）</option></select></label>
-        <button id="start-task" class="primary" type="submit">开始任务 ↗</button>
-      </div>
-      <p id="form-error" class="error form-error" role="alert"></p>
-      <details class="settings">
-        <summary>连接设置</summary>
-        <div class="settings-fields">
-          <label for="codex-path">Codex 可执行文件<input id="codex-path" placeholder="自动查找" spellcheck="false" autocapitalize="off"></label>
-          <label for="model">模型<input id="model" placeholder="沿用 Codex 设置" spellcheck="false" autocapitalize="off"></label>
-        </div>
-        <div class="settings-actions"><button id="save-settings" type="button">保存设置</button><span id="settings-state" class="settings-note" role="status">使用本机 Codex 登录</span></div>
-      </details>
-    </form>
     <section class="task-section" aria-label="任务">
       <div class="task-section-heading"><h2>任务</h2><span id="task-count"></span></div>
-      <div id="empty-state" class="empty-state"><strong>先交给我一件小事</strong><p>进度、问题和结果都会留在这里。</p></div>
+      <div id="empty-state" class="empty-state"><strong>还没有任务记录</strong><p>和桌宠说说想做什么，结果会留在这里。</p></div>
       <nav id="task-history" class="task-history" aria-label="任务历史"></nav>
       <article id="task-detail" class="task-detail hidden" tabindex="-1" aria-labelledby="detail-title">
         <div class="detail-top"><h3 id="detail-title"></h3><div class="detail-actions"><button id="detail-stop" class="danger" type="button">停止</button><button id="detail-retry" type="button">再试一次</button><button id="copy-output" type="button">复制结果</button></div></div>
@@ -389,18 +466,7 @@ function mountPanel() {
       </article>
     </section>
     <footer class="panel-footnote"><span id="platform-note"></span><button id="quit-app" type="button">退出大小姐</button></footer>`
-  $('task-form').addEventListener('submit', startTask)
-  $('choose-workspace').addEventListener('click', event => action(event.currentTarget, async () => {
-    const path = await invoke('choose_workspace')
-    if (path) $('workspace').value = path
-  }))
-  $('save-settings').addEventListener('click', event => action(event.currentTarget, async () => {
-    const settings = collectSettings()
-    await invoke('save_settings', { settings })
-    state.settings = settings
-    $('settings-state').textContent = '已保存'
-  }))
-  $('show-pet').addEventListener('click', event => action(event.currentTarget, () => invoke('hide_panel')))
+  $('show-pet').addEventListener('click',event=>action(event.currentTarget,async()=>{await invoke('hide_panel');await invoke('open_pet')}))
   $('quit-app').addEventListener('click', event => action(event.currentTarget, () => invoke('quit_app')))
   $('detail-stop').addEventListener('click', event => action(event.currentTarget, async () => {
     const task = selectedTask(state.tasks, state.selected)
@@ -417,39 +483,7 @@ function mountPanel() {
       $('copy-output').textContent = '已复制'
     }
   }))
-  $('prompt').addEventListener('keydown', event => {
-    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-      event.preventDefault()
-      $('task-form').requestSubmit()
-    }
-  })
-}
 
-function collectSettings() {
-  return settingsFrom({ workspace: $('workspace').value.trim(), permission: $('permission').value, codexPath: $('codex-path').value.trim(), model: $('model').value.trim() })
-}
-
-async function startTask(event) {
-  event.preventDefault()
-  if (state.submitting || state.tasks.some(isActive)) return
-  const prompt = $('prompt').value.trim()
-  const settings = collectSettings()
-  if (!prompt || !settings.workspace) return
-  state.submitting = true
-  state.error = ''
-  $('form-error').textContent = ''
-  renderPanel()
-  try {
-    await invoke('save_settings', { settings })
-    state.settings = settings
-    acceptTask(await invoke('task_start', { request: { prompt, ...settings } }), { select: true, snapshot: true })
-    $('prompt').value = ''
-  } catch (error) {
-    showError(error)
-  } finally {
-    state.submitting = false
-    renderPanel()
-  }
 }
 
 function renderPanel() {
@@ -457,8 +491,6 @@ function renderPanel() {
   const active = tasks.find(isActive)
   const selected = selectedTask(tasks, state.selected)
   state.selected = selected?.id ?? null
-  $('start-task').disabled = !!active || state.submitting
-  $('start-task').textContent = state.submitting ? '正在启动…' : active ? '任务进行中' : '开始任务 ↗'
   $('task-count').textContent = tasks.length ? `${tasks.length} 条记录` : ''
   $('empty-state').classList.toggle('hidden', tasks.length > 0)
   const history = $('task-history')
@@ -503,25 +535,26 @@ function renderPanel() {
   renderPending(selected)
 }
 
-function renderPending(task) {
-  const pending = $('pending')
+function renderPending(task, pending=$('pending'), stateKey='questionKey') {
   const key = pendingKey(task)
   pending.classList.toggle('hidden', !key)
-  if (key === state.questionKey) return
-  state.questionKey = key
+  if (key === state[stateKey]) return
+  state[stateKey] = key
   pending.replaceChildren()
-  if (!task.pending) return
+  if (!task?.pending) return
   if (task.pending.kind === 'approval') renderApproval(task, pending)
   else renderQuestions(task, pending)
 }
 
 function renderApproval(task, container) {
   const pending = task.pending
-  container.append(element('h3', '', '允许这次操作吗？'))
-  if (pending.message) container.append(element('p', '', pending.message))
+  const explanation=element('div','pending-explanation')
+  explanation.append(element('h3', '', '允许这次操作吗？'))
+  if (pending.message) explanation.append(element('p', '', pending.message))
   const command = typeof pending.command === 'string' ? pending.command : pending.command && JSON.stringify(pending.command, null, 2)
   const scope = [command, pending.permissions && JSON.stringify(pending.permissions, null, 2)].filter(Boolean).join('\n\n')
-  if (scope) container.append(element('pre', '', scope))
+  if (scope) explanation.append(element('pre', '', scope))
+  container.append(explanation)
   const buttons = element('div', 'pending-actions')
   const reject = element('button', '', '拒绝')
   const allow = element('button', 'primary', '允许一次')
@@ -637,12 +670,6 @@ async function boot() {
   if (view === 'pet') {bubbles.task(currentTask(state.tasks), { snapshot: true });bubbles.alert(initial.companion?.alert);bubbles.clipboard(initial.companion?.clipboard?.offer)}
   if (view === 'panel' && initial.companion) {
     companionPanel = mountCompanion({invoke, initial: initial.companion, showError, platform:state.platform, onTasks: () => companionPanel.select('tasks')})
-    const clipboardRequest=async()=>{if(await invoke('clipboard_pending'))await companionPanel.previewClipboard()}
-    const clipboardOffer=async()=>{if(await invoke('clipboard_offer_pending'))await companionPanel.previewClipboard(true)}
-    await window.__TAURI__.event.listen('clipboard:request',()=>clipboardRequest().catch(showError))
-    await window.__TAURI__.event.listen('clipboard:offer-request',()=>clipboardOffer().catch(showError))
-    await clipboardRequest()
-    await clipboardOffer()
     await window.__TAURI__.event.listen('companion:update', event => companionPanel.update(event.payload))
     await window.__TAURI__.event.listen('panel:tab', event => {
       companionPanel.select(event.payload,{focus:true})
@@ -656,6 +683,15 @@ async function boot() {
     })
     await window.__TAURI__.event.listen('motion:update',event=>companionPanel.motionUpdated(event.payload))
   } else if (view === 'pet') {
+    petCompanion=initial.companion
+    if(petCompanion?.notice)bubbles.speak(petCompanion.notice)
+    await window.__TAURI__.event.listen('companion:update',event=>{petCompanion=event.payload;renderPet()})
+    await window.__TAURI__.event.listen('pet:compose',()=>openPetComposer().catch(showError))
+    const clipboardRequest=async()=>{if(await invoke('clipboard_pending'))await previewPetClipboard()}
+    const clipboardOffer=async()=>{if(await invoke('clipboard_offer_pending'))await previewPetClipboard(true)}
+    await window.__TAURI__.event.listen('clipboard:request',()=>clipboardRequest().catch(showError))
+    await window.__TAURI__.event.listen('clipboard:offer-request',()=>clipboardOffer().catch(showError))
+    await clipboardRequest();await clipboardOffer()
     await window.__TAURI__.event.listen('companion:action', event => {if(event.payload.kind==='note.show')invoke('note_show').catch(showError)})
     await window.__TAURI__.event.listen('companion:bubble', event => {
       companionBubble = event.payload
@@ -665,10 +701,6 @@ async function boot() {
     })
   }
   if (view === 'panel') {
-    $('workspace').value = state.settings.workspace
-    $('permission').value = state.settings.permission
-    $('codex-path').value = state.settings.codexPath
-    $('model').value = state.settings.model
     $('platform-note').textContent = `${platformLabel[state.platform] || state.platform} · ${state.positionable ? '原生窗口' : '原地互动模式'}`
   } else {
     await invoke('set_reduced_motion', { enabled: reduceMotion.matches })

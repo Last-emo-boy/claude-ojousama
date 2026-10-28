@@ -18,6 +18,9 @@ pub struct Folder {
 pub fn enabled(d: &Value) -> bool {
     d["watch"]["native"]["enabled"] == true && d["watch"]["native"]["consentVersion"] == 1
 }
+pub fn auto_confirmation_required(d: &Value, roots: &[String]) -> bool {
+    !enabled(d) || d["watch"]["native"]["autoRoots"] != json!(roots)
+}
 pub fn configuration(d: &Value) -> Value {
     json!([
         d["watch"]["native"],
