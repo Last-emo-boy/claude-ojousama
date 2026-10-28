@@ -3,6 +3,7 @@ import { observationPayload, observationStatus, observationPermissions } from '.
 import { habitPayload, moodLabel } from './behavior.mjs'
 import { agendaPayload, agendaStatus, backgroundLabel, backgroundText } from './agenda.mjs'
 import { watchPayload, fileGroups, watchStatus } from './files.mjs'
+import { readDrafts, restoreDrafts } from './panel-state.mjs'
 const $=id=>document.getElementById(id)
 const text=(tag,value,className='')=>{const n=document.createElement(tag);n.textContent=value;n.className=className;return n}
 const date=ts=>ts?new Date(ts).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):''
@@ -10,6 +11,7 @@ export const dateValue=value=>value?new Date(value).getTime():null
 const filters=[['activity','动态'],['chat','对话'],['tasks','任务'],['todos','提醒'],['goals','目标'],['files','文件'],['growth','成长']]
 export function mountCompanion({invoke,initial,showError,platform}){
   let current=initial, tab='records', filter='activity', desktopValue=null
+  const dirty=new Map(), markDirty=id=>dirty.set(id,(dirty.get(id)||0)+1)
   const header=document.querySelector('.panel-header'), tasks=$('task-history').closest('section')
   tasks.id='view-tasks'
   const sidebar=document.createElement('aside');sidebar.className='companion-sidebar'
@@ -48,11 +50,12 @@ export function mountCompanion({invoke,initial,showError,platform}){
   records.append(tasks)
   const call=async(command,args={})=>{const v=await invoke('companion_command',{command,args});showError('');return v}
   const bind=(id,work)=>$(id).addEventListener('click',async event=>{const b=event.currentTarget;b.disabled=true;try{await work()}catch(e){showError(e)}finally{b.disabled=false}})
-  const submit=(id,work)=>$(id).addEventListener('submit',async event=>{event.preventDefault();const b=event.target.querySelector('button.primary,button:not([type="button"])');if(b)b.disabled=true;try{await work()}catch(e){showError(e)}finally{if(b)b.disabled=false}})
+  for(const event of ['input','change'])preferences.addEventListener(event,e=>{if(e.target.form?.id)markDirty(e.target.form.id)})
+  const submit=(id,work)=>$(id).addEventListener('submit',async event=>{event.preventDefault();const revision=dirty.get(id);const b=event.target.querySelector('button.primary,button:not([type="button"])');if(b)b.disabled=true;try{await work();if(dirty.get(id)===revision)dirty.delete(id)}catch(e){showError(e)}finally{if(b)b.disabled=false}})
   const refreshDesktop=async()=>{
     desktopValue=await invoke('desktop_status')
     $('desktop-autostart').disabled=typeof desktopValue.autoStart!=='boolean'
-    $('desktop-autostart').checked=desktopValue.autoStart===true
+    if(!dirty.has('desktop-entry-form'))$('desktop-autostart').checked=desktopValue.autoStart===true
     $('desktop-hotkey').disabled=!desktopValue.shortcutSupported
     $('desktop-state').textContent=desktopStatus(desktopValue,platform)
   }
@@ -75,8 +78,8 @@ export function mountCompanion({invoke,initial,showError,platform}){
   const textSupported=initial.observer.capabilities?.accessibilitySupported??['macos','darwin'].includes(platform)
   for(const id of ['observe-text-option','observe-text-help','observe-accessibility'])$(id).hidden=!textSupported
   submit('companion-settings',async()=>{await call('settings:set',{backend:$('companion-backend').value,dshExe:$('companion-dsh').value,sourceProfile:$('companion-profile').value||'desktop',provider:$('companion-provider').value,model:$('companion-dsh-model').value,codexExe:$('companion-codex').value.trim(),codexModel:$('companion-model').value.trim(),codexGlanceModel:$('companion-glance-model').value.trim(),cwd:$('companion-cwd').value.trim(),permission:$('companion-permission').value,nagMinutes:Number($('nag-minutes').value),quietStart:$('quiet-start').value,quietEnd:$('quiet-end').value});$('companion-saved').textContent='已保存'})
-  bind('companion-cwd-choose',async()=>{const path=await invoke('choose_workspace');if(path)$('companion-cwd').value=path})
-  bind('watch-choose',async()=>{const path=await invoke('choose_folder');if(path)$('watch-folders').value=[$('watch-folders').value.trim(),path].filter(Boolean).join('\n')})
+  bind('companion-cwd-choose',async()=>{const path=await invoke('choose_workspace');if(path){$('companion-cwd').value=path;markDirty('companion-settings')}})
+  bind('watch-choose',async()=>{const path=await invoke('choose_folder');if(path){$('watch-folders').value=[$('watch-folders').value.trim(),path].filter(Boolean).join('\n');markDirty('watch-form')}})
   submit('watch-form',async()=>{await call('watch:set',watchPayload({enabled:$('watch-enabled').checked,folders:$('watch-folders').value,mode:$('watch-mode').value}));$('watch-saved').textContent='已保存；从新的文件基线开始发现。'})
   submit('weather-form',async()=>{await call('settings:set',{weatherCity:$('weather-city').value.trim()});await call('weather:refresh')})
   bind('update-check',async()=>{const value=await call('update:check');$('update-state').textContent=value?`最新发布：${value.version}`:'暂时没有新发布'})
@@ -138,9 +141,11 @@ export function mountCompanion({invoke,initial,showError,platform}){
     records.hidden=tab!=='records';preferences.hidden=tab!=='settings'
     for(const b of nav.children)b.setAttribute('aria-current',String(b.dataset.tab===tab))
     $('companion-title').textContent=tab==='settings'?'按你的节奏。':'一起做过的事'
-    if(tab==='settings'){fill();refreshObservation().catch(showError);refreshDesktop().catch(showError)}
+    if(tab==='settings'){const drafts=readDrafts(preferences,dirty);fill();restoreDrafts(preferences,drafts);refreshObservation().catch(showError);refreshDesktop().catch(showError)}
     render()
   }
   fill();select('records')
-  return{update(value){current=value;render()},select,taskUpdated(){},motionUpdated(){},previewClipboard(){return invoke('open_pet')}}
+  return{update(value){current=value;render()},select,taskUpdated(){},motionUpdated(){},previewClipboard(){return invoke('open_pet')},
+    snapshot(){return{tab,filter,drafts:readDrafts(preferences,dirty),details:[...preferences.querySelectorAll('details')].map(d=>d.open)}},
+    restore(value){if(!value)return;filter=filters.some(([name])=>name===value.filter)?value.filter:'activity';select(value.tab);restoreDrafts(preferences,value.drafts);for(const id of Object.keys(value.drafts||{}))markDirty(id);[...preferences.querySelectorAll('details')].forEach((d,i)=>{d.open=value.details?.[i]===true})}}
 }

@@ -43,6 +43,10 @@ body.pet { width: 100vw; height: 100vh; overflow: hidden; background: transparen
 .pet #app { width: 100%; height: 100%; position: relative; }
 #sprite { width: 180px; height: 180px; position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); touch-action: none; cursor: grab; image-rendering: pixelated; }
 #sprite.dragging { cursor: grabbing; }
+#sprite { overflow: hidden; }
+#sprite-art { position: absolute; inset: 0; pointer-events: none; }
+#sprite-frame { position: absolute; background-repeat: no-repeat; image-rendering: pixelated; }
+#sprite-sign { position: absolute; transform: translateY(-50%); color: #64452e; font: 600 13px sans-serif; text-align: center; white-space: nowrap; pointer-events: none; }
 .pet-bubble { position: absolute; left: 24px; right: 24px; bottom: 192px; padding: 10px 14px; background: #fffcf6fa; border: 1px solid #e2d7c6; border-radius: 14px; box-shadow: 0 4px 16px #33291b12; }
 .pet-bubble::after { content: ""; position: absolute; width: 10px; height: 10px; left: calc(50% - 5px); bottom: -6px; background: #fffcf6; border-right: 1px solid #e2d7c6; border-bottom: 1px solid #e2d7c6; transform: rotate(45deg); }
 .pet-bubble-heading { display: flex; justify-content: space-between; align-items: center; }

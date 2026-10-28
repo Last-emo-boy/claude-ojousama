@@ -14,6 +14,7 @@ mod growth;
 mod intent;
 mod motion;
 mod observer;
+mod panel;
 mod service;
 mod utilities;
 mod windows;
@@ -131,6 +132,7 @@ struct State {
     desktop_entry: Arc<Mutex<desktop_entry::Controller>>,
     clipboard_pending: AtomicBool,
     pet_interacting: AtomicBool,
+    panel: Mutex<panel::Session>,
 }
 
 struct DesktopHost {
@@ -300,31 +302,103 @@ async fn desktop_status(
     .map_err(|e| e.to_string())
 }
 
-fn panel(app: &tauri::AppHandle) -> Result<(), String> {
-    let window = app.get_webview_window("panel").ok_or("任务窗口不可用")?;
-    window.show().map_err(|e| e.to_string())?;
-    window.set_focus().map_err(|e| e.to_string())
+fn open_panel(
+    app: &tauri::AppHandle,
+    tab: Option<String>,
+    task_id: Option<u64>,
+) -> Result<(), String> {
+    let state = app.state::<State>();
+    let mut session = state.panel.lock().unwrap();
+    session.request(tab, task_id);
+    if let Some(window) = app.get_webview_window("panel") {
+        if session.ready {
+            window
+                .emit("panel:open", session.take_target())
+                .map_err(|e| e.to_string())?;
+            window.show().map_err(|e| e.to_string())?;
+            window.set_focus().map_err(|e| e.to_string())?;
+        }
+        return Ok(());
+    }
+    session.ready = false;
+    let window = WebviewWindowBuilder::new(
+        app,
+        "panel",
+        WebviewUrl::App("index.html?view=panel".into()),
+    )
+    .title("Claude Ojousama")
+    .inner_size(840.0, 720.0)
+    .min_inner_size(560.0, 540.0)
+    .visible(false)
+    .build()
+    .map_err(|e| e.to_string())?;
+    if let Some((w, h)) = session.size {
+        window
+            .set_size(tauri::PhysicalSize::new(w, h))
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some((x, y)) = session.position {
+        window
+            .set_position(PhysicalPosition::new(x, y))
+            .map_err(|e| e.to_string())?;
+    }
+    let closing = window.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            if let Err(error) = closing.emit("panel:close", ()) {
+                eprintln!("panel close: {error}");
+            }
+        }
+    });
+    Ok(())
+}
+// WebView2 cannot create a WebView inside a synchronous native event handler.
+fn panel(app: &tauri::AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if let Err(error) = open_panel(&app, None, None) {
+            let _ = app.emit("pet:error", error);
+        }
+    });
 }
 #[tauri::command]
-fn show_panel(
+async fn show_panel(
     app: tauri::AppHandle,
     tab: Option<String>,
     task_id: Option<u64>,
 ) -> Result<(), String> {
-    panel(&app)?;
-    if let Some(id) = task_id {
-        app.emit_to("panel", "task:select", id)
-            .map_err(|e| e.to_string())?;
-    }
-    if let Some(tab) = tab {
-        app.emit_to("panel", "panel:tab", tab)
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    open_panel(&app, tab, task_id)
 }
 #[tauri::command]
-fn hide_panel(window: WebviewWindow) -> Result<(), String> {
-    window.hide().map_err(|e| e.to_string())
+fn panel_ready(window: WebviewWindow, state: tauri::State<State>) -> Result<(), String> {
+    panel_only(&window)?;
+    let mut session = state.panel.lock().unwrap();
+    session.ready = true;
+    window
+        .emit("panel:open", session.take_target())
+        .map_err(|e| e.to_string())?;
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())
+}
+#[tauri::command]
+fn hide_panel(
+    window: WebviewWindow,
+    state: tauri::State<State>,
+    view_state: Option<Value>,
+) -> Result<(), String> {
+    if window.label() != "panel" {
+        return window.hide().map_err(|e| e.to_string());
+    }
+    let mut session = state.panel.lock().unwrap();
+    if let Some(view) = view_state {
+        session.view = view;
+    }
+    session.position = window.outer_position().ok().map(|p| (p.x, p.y));
+    session.size = window.inner_size().ok().map(|s| (s.width, s.height));
+    window.destroy().map_err(|e| e.to_string())?;
+    session.ready = false;
+    Ok(())
 }
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
@@ -332,10 +406,11 @@ fn quit_app(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
-fn bootstrap(state: tauri::State<State>) -> Value {
+fn bootstrap(window: WebviewWindow, state: tauri::State<State>) -> Value {
     json!({ "platform":std::env::consts::OS, "positionable":state.positionable,
         "tasks":state.tasks.list(), "settings":*state.settings.lock().unwrap(),
-        "motion":*state.motion.lock().unwrap(), "companion":state.service.snapshot() })
+        "motion":*state.motion.lock().unwrap(), "companion":state.service.snapshot(),
+        "panelState":if window.label()=="panel" {state.panel.lock().unwrap().view.clone()}else{Value::Null} })
 }
 
 fn panel_only(window: &WebviewWindow) -> Result<(), String> {
@@ -1626,9 +1701,7 @@ fn main() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if !args.iter().any(|arg| arg == "--from-autostart") {
-                if let Err(error) = panel(app) {
-                    eprintln!("open existing companion: {error}");
-                }
+                panel(app);
             }
         }))
         .plugin(tauri_plugin_dialog::init())
@@ -1666,16 +1739,6 @@ fn main() {
                 },
                 Err(e) => return Err(e.into()),
             };
-            let panel_window = WebviewWindowBuilder::new(
-                app,
-                "panel",
-                WebviewUrl::App("index.html?view=panel".into()),
-            )
-            .title("Claude Ojousama")
-            .inner_size(840.0, 720.0)
-            .min_inner_size(560.0, 540.0)
-            .visible(false)
-            .build()?;
             let pet = WebviewWindowBuilder::new(
                 app,
                 "pet",
@@ -1785,6 +1848,7 @@ fn main() {
                 desktop_entry: Arc::new(Mutex::new(desktop_entry::Controller::default())),
                 clipboard_pending: AtomicBool::new(false),
                 pet_interacting: AtomicBool::new(false),
+                panel: Mutex::new(panel::Session::default()),
             });
             {
                 let state = app.state::<State>();
@@ -1813,7 +1877,7 @@ fn main() {
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
-                        let _ = panel(app);
+                        panel(app);
                     }
                     "pet" => {
                         if let Some(window) = app.get_webview_window("pet") {
@@ -1837,15 +1901,6 @@ fn main() {
                 tray = tray.icon(icon.clone());
             }
             tray.build(app)?;
-            panel_window.on_window_event({
-                let window = panel_window.clone();
-                move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        api.prevent_close();
-                        let _ = window.hide();
-                    }
-                }
-            });
             if app.state::<State>().service.data.snapshot()["note"]["open"] == true {
                 note_show(app.handle().clone())?;
             }
@@ -1863,6 +1918,7 @@ fn main() {
             clipboard_offer_open,
             clipboard_offer_preview,
             show_panel,
+            panel_ready,
             hide_panel,
             quit_app,
             save_settings,

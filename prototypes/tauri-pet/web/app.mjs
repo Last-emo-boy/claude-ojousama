@@ -4,6 +4,8 @@ import { mountCompanion } from './companion.mjs'
 import { createBubbleState } from './bubble.mjs'
 import { clipboardPrompt, appendDraft, clipboardTodo } from './desktop-entry.mjs'
 import { spritePlayback } from './behavior.mjs'
+import { CANVAS_SIZE, SPRITE_SCALE, frameGeometry, createSheetCache } from './sprites.mjs'
+import { readFields, restoreFields } from './panel-state.mjs'
 
 const app = document.querySelector('#app')
 const view = new URLSearchParams(location.search).get('view') === 'panel' ? 'panel' : 'pet'
@@ -95,12 +97,8 @@ let activeIntent = 0
 let animationFrame = 0
 let spriteBands = []
 let lastRegions = ''
-let sheets = {}
 let definitions = {}
-let loading = new Map()
-let spriteContext
-const SPRITE_SCALE = 1.35
-const CANVAS_SIZE = 180
+const sheets = createSheetCache(readSheet)
 
 function mountPet() {
   app.innerHTML = `
@@ -119,14 +117,8 @@ function mountPet() {
       </div>
     </section>
     <div id="pet-menu" class="pet-menu" role="menu" aria-label="桌宠操作" hidden><button id="pet-menu-chat" type="button" role="menuitem">聊两句</button><button id="pet-menu-touch" type="button" role="menuitem">摸摸头</button><button id="pet-perch" type="button" role="menuitem">爬上窗口</button><button id="pet-menu-walk" type="button" role="menuitem">去走走</button><button id="pet-menu-stop" type="button" role="menuitem">停步／下来</button><button id="pet-menu-actions" type="button" role="menuitem">更多操作</button><button id="pet-menu-records" type="button" role="menuitem">记录</button><button id="pet-menu-settings" type="button" role="menuitem">设置</button><button id="pet-menu-quiet" type="button" role="menuitem">安静一小时</button></div>
-    <canvas id="sprite" role="button" tabindex="0" aria-haspopup="menu" aria-expanded="false" aria-label="桌宠，点击聊天，右键更多操作，拖动后松手抛出"></canvas>`
+    <div id="sprite" role="button" tabindex="0" aria-haspopup="menu" aria-expanded="false" aria-label="桌宠，点击聊天，右键更多操作，拖动后松手抛出"><div id="sprite-art"><div id="sprite-frame"></div></div><span id="sprite-sign" hidden></span></div>`
   const canvas = $('sprite')
-  const ratio = devicePixelRatio || 1
-  canvas.width = CANVAS_SIZE * ratio
-  canvas.height = CANVAS_SIZE * ratio
-  spriteContext = canvas.getContext('2d')
-  spriteContext.setTransform(ratio, 0, 0, ratio, 0, 0)
-  spriteContext.imageSmoothingEnabled = false
   $('pet-open').addEventListener('click',()=>{
     const notice=bubbles.read(),task=currentTask(state.tasks)
     const output=notice?.source==='task' ? task?.output : notice?.text
@@ -238,8 +230,7 @@ function mountPet() {
   const resize = new ResizeObserver(() => sendHitRegions())
   resize.observe($('pet-bubble')); resize.observe($('pet-menu'))
   window.addEventListener('resize', () => {
-    const ratio=devicePixelRatio||1
-    if(canvas.width!==CANVAS_SIZE*ratio){canvas.width=CANVAS_SIZE*ratio;canvas.height=CANVAS_SIZE*ratio;spriteContext.setTransform(ratio,0,0,ratio,0,0);spriteContext.imageSmoothingEnabled=false;drawSprite()}
+    drawSprite()
     sendHitRegions()
   })
   document.addEventListener('visibilitychange', () => {
@@ -269,12 +260,10 @@ async function loadSprites() {
   if (!response.ok) throw new Error('角色资源未准备好，请重新构建原型')
   const manifest = await response.json()
   definitions = manifest.anims
-  await Promise.all(['idle', 'thinking', 'typing', 'dangle', 'happy', 'error', 'wave', 'sit'].map(loadSheet))
+  await loadSheet('idle')
 }
-async function loadSheet(name) {
-  if (sheets[name]) return
-  if (loading.has(name)) return loading.get(name)
-  const task = (async () => {
+const loadSheet = name => sheets.load(name)
+async function readSheet(name) {
     const definition = definitions[name]
     if (!definition) throw new Error(`缺少角色动作：${name}`)
     const image = new Image()
@@ -286,44 +275,43 @@ async function loadSheet(name) {
     const offscreen = document.createElement('canvas')
     offscreen.width = image.width
     offscreen.height = image.height
-    const context = offscreen.getContext('2d', { willReadFrequently: true })
-    context.drawImage(image, 0, 0)
-    const pixels = context.getImageData(0, 0, image.width, image.height).data
-    const bands = Array.from({ length: definition.frames }, (_, frame) => alphaBands(pixels, image.width, frame, definition.w, definition.h))
-    sheets[name] = { image, bands, ...definition }
-  })()
-  loading.set(name, task)
-  try { await task } finally { loading.delete(name) }
+    try {
+      const context = offscreen.getContext('2d', { willReadFrequently: true })
+      context.drawImage(image, 0, 0)
+      const pixels = context.getImageData(0, 0, image.width, image.height).data
+      const bands = Array.from({ length: definition.frames }, (_, frame) => alphaBands(pixels, image.width, frame, definition.w, definition.h))
+      return { image, bands, ...definition }
+    } finally {
+      offscreen.width = offscreen.height = 0
+    }
 }
 
 function drawSprite() {
   clearTimeout(animationTimer)
-  if (document.hidden || !spriteContext) return
+  if (document.hidden || !$('sprite-frame')) return
   const playback = petPlayback()
   const name = playback.name
-  const sheet = sheets[name]
+  const sheet = sheets.get(name)
   if (!sheet) { loadSheet(name).then(drawSprite).catch(showError); return }
   if (activeAnimation !== name || activeIntent !== playback.intent) {
     activeAnimation = name
     activeIntent = playback.intent
     animationFrame = 0
   }
-  const frame = reduceMotion.matches ? 0 : sheet.loop === false ? Math.min(animationFrame, sheet.frames - 1) : animationFrame % sheet.frames
-  const scale = sheet.displayHeight ? sheet.displayHeight / sheet.h : SPRITE_SCALE
-  const x = (CANVAS_SIZE - sheet.w * scale) / 2
-  const y = CANVAS_SIZE - sheet.h * scale + (sheet.offsetsY?.[frame] ?? sheet.offsetY ?? 0)
-  spriteContext.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
+  const { frame, scale, width, height, x, y } = frameGeometry(sheet, animationFrame, reduceMotion.matches)
   const mirrored=state.motion.facing<0
-  spriteContext.save()
-  if(mirrored){spriteContext.translate(CANVAS_SIZE,0);spriteContext.scale(-1,1)}
-  spriteContext.drawImage(sheet.image, frame * sheet.w, 0, sheet.w, sheet.h, x, y, sheet.w * scale, sheet.h * scale)
-  spriteContext.restore()
+  $('sprite-art').style.transform=mirrored?'scaleX(-1)':''
+  Object.assign($('sprite-frame').style,{left:`${x}px`,top:`${y}px`,width:`${width}px`,height:`${height}px`,
+    backgroundImage:`url("${sheet.image.src}")`,backgroundSize:`${width*sheet.frames}px ${height}px`,backgroundPosition:`${-frame*width}px 0px`})
+  const sign=$('sprite-sign')
+  sign.hidden=!(name==='sign' && sheet.boards && companionBubble?.text)
   if(name==='sign' && sheet.boards && companionBubble?.text){
     const b=sheet.boards[frame]||sheet.boards[0], text=companionBubble.text.slice(0,6)
-    spriteContext.save();spriteContext.fillStyle='#64452e';spriteContext.textAlign='center';spriteContext.textBaseline='middle'
-    let size=13;do{spriteContext.font=`600 ${size}px sans-serif`;size-=.5}while(size>6&&spriteContext.measureText(text).width>(b.w-4)*SPRITE_SCALE)
     const centre=x+(b.x+b.w/2)*SPRITE_SCALE
-    spriteContext.fillText(text,mirrored?CANVAS_SIZE-centre:centre,y+(b.y+b.h/2)*SPRITE_SCALE);spriteContext.restore()
+    const textWidth=(b.w-4)*SPRITE_SCALE
+    sign.textContent=text
+    Object.assign(sign.style,{left:`${(mirrored?CANVAS_SIZE-centre:centre)-textWidth/2}px`,top:`${y+(b.y+b.h/2)*SPRITE_SCALE}px`,width:`${textWidth}px`,fontSize:'13px'})
+    let size=13;while(size>6&&sign.scrollWidth>sign.clientWidth){size-=.5;sign.style.fontSize=`${size}px`}
   }
   const bounds = $('sprite').getBoundingClientRect()
   const bands=placeBands(sheet.bands[frame],{x,y},scale)
@@ -466,7 +454,7 @@ function mountPanel() {
       </article>
     </section>
     <footer class="panel-footnote"><span id="platform-note"></span><button id="quit-app" type="button">退出大小姐</button></footer>`
-  $('show-pet').addEventListener('click',event=>action(event.currentTarget,async()=>{await invoke('hide_panel');await invoke('open_pet')}))
+  $('show-pet').addEventListener('click',event=>action(event.currentTarget,async()=>{await invoke('open_pet');await closePanel()}))
   $('quit-app').addEventListener('click', event => action(event.currentTarget, () => invoke('quit_app')))
   $('detail-stop').addEventListener('click', event => action(event.currentTarget, async () => {
     const task = selectedTask(state.tasks, state.selected)
@@ -484,6 +472,11 @@ function mountPanel() {
     }
   }))
 
+}
+
+async function closePanel() {
+  await invoke('hide_panel',{viewState:{companion:companionPanel?.snapshot(),selected:state.selected,scrollY:window.scrollY,focus:document.activeElement?.id,
+    pending:{key:state.questionKey,fields:readFields($('pending'))},scrolls:Object.fromEntries(['task-history','detail-output'].map(id=>[id,$(id).scrollTop]))}})
 }
 
 function renderPanel() {
@@ -601,6 +594,7 @@ function renderQuestions(task, container) {
       })
     } else {
       const input = element('textarea')
+      input.id = `answer-${fields.length}`
       input.required = true
       input.maxLength = 12000
       input.setAttribute('aria-label', question.question || '你的回答')
@@ -660,6 +654,7 @@ async function boot() {
     await loadSprites()
   }
   const initial = await invoke('bootstrap')
+  if(view==='panel')state.selected=initial.panelState?.selected??null
   for (const task of initial.tasks || []) {
     state.tasks = upsertTask(state.tasks, task, { snapshot: true })
   }
@@ -671,9 +666,12 @@ async function boot() {
   if (view === 'panel' && initial.companion) {
     companionPanel = mountCompanion({invoke, initial: initial.companion, showError, platform:state.platform, onTasks: () => companionPanel.select('tasks')})
     await window.__TAURI__.event.listen('companion:update', event => companionPanel.update(event.payload))
-    await window.__TAURI__.event.listen('panel:tab', event => {
-      companionPanel.select(event.payload,{focus:true})
-      if(event.payload==='tasks') {
+    companionPanel.restore(initial.panelState?.companion)
+    await window.__TAURI__.event.listen('panel:close',()=>closePanel().catch(showError))
+    await window.__TAURI__.event.listen('panel:open', event => {
+      if(event.payload.taskId!=null){state.selected=event.payload.taskId;renderPanel()}
+      if(event.payload.tab)companionPanel.select(event.payload.tab,{focus:true})
+      if(event.payload.tab==='tasks') {
         renderPanel()
         if(!$('task-detail').classList.contains('hidden')) {
           $('task-detail').scrollIntoView({block:'start'})
@@ -710,6 +708,14 @@ async function boot() {
     })
   }
   render()
+  if(view==='panel') {
+    if(initial.panelState?.pending?.key===state.questionKey)restoreFields($('pending'),initial.panelState.pending.fields)
+    for(const [id,top] of Object.entries(initial.panelState?.scrolls||{})){const node=$(id);if(node)node.scrollTop=top}
+    const focus=$(initial.panelState?.focus)
+    if(focus&&!focus.closest('[hidden]'))focus.focus({preventScroll:true})
+    window.scrollTo(0,initial.panelState?.scrollY||0)
+    await invoke('panel_ready')
+  }
   if (view === 'pet') drawSprite()
 }
 
