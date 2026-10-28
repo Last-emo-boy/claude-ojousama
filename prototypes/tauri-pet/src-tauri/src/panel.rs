@@ -13,6 +13,7 @@ pub struct Target {
 pub struct Session {
     pub view: Value,
     pub ready: bool,
+    pub parked: bool,
     pub target: Target,
     pub position: Option<(i32, i32)>,
     pub size: Option<(u32, u32)>,
